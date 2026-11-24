@@ -640,10 +640,8 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 quiescent = false;
                 const createConnectionOverrides = () => source === 'periodic'
                     ? {
-                        capabilities: normalizePeerCapabilities({
-                            negentropyVersion: 2,
-                            orderedCatchup: false,
-                        }),
+                        wireVersion: 2,
+                        capabilities: normalizePeerCapabilities(),
                         initialPingReceived: true,
                     }
                     : {};

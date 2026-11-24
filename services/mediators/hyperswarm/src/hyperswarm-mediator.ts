@@ -40,6 +40,7 @@ import type {
     OrderedCatchupReqMessage,
     PingMessage,
 } from './protocol-messages.js';
+import { WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
 import {
     createConnectionInfo,
     type ConnectionInfo,
@@ -75,9 +76,6 @@ let syncStore: OperationSyncStore = createConfiguredSyncStore();
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const NEGENTROPY_VERSION = 2;
-const ORDERED_CATCHUP_VERSION = 1;
-const TRANSPORT_FRAMING_VERSION = 1;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 32;
@@ -124,7 +122,6 @@ function buildOrderedCatchupCoordinator(
     pipeline: ImportPipeline,
 ) {
     return createOrderedCatchupCoordinator({
-        version: ORDERED_CATCHUP_VERSION,
         maxOpsPerPage: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPage: NEG_MAX_BYTES_PER_PUSH,
         idleTimeoutMs: NEG_SESSION_IDLE_TIMEOUT_MS,
@@ -155,8 +152,7 @@ function buildNegentropyCoordinator(
     pipeline: ImportPipeline,
 ) {
     return createNegentropyCoordinator({
-        version: NEGENTROPY_VERSION,
-        transportFramingVersion: TRANSPORT_FRAMING_VERSION,
+        wireVersion: WIRE_PROTOCOL_VERSION,
         frameSizeLimit: config.negentropyFrameSizeLimit,
         maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
@@ -188,9 +184,7 @@ function buildNegentropyCoordinator(
 
 negentropyCoordinator = buildNegentropyCoordinator(syncStore, importPipeline);
 peerSyncCoordinator = createPeerSyncCoordinator({
-    negentropyVersion: NEGENTROPY_VERSION,
-    orderedCatchupVersion: ORDERED_CATCHUP_VERSION,
-    transportFramingVersion: TRANSPORT_FRAMING_VERSION,
+    wireVersion: WIRE_PROTOCOL_VERSION,
     windowSize: config.negentropyMaxRecordsPerWindow,
     repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
     syncStats,
@@ -222,14 +216,13 @@ const queueCoordinator = createQueueCoordinator({
     requestRepair: (peerKey, connection) =>
         peerSyncCoordinator.requestRepair(peerKey, connection),
     createQueueMessage: () => createBaseMessage('queue'),
-    relay: message => transport.relay(message),
+    relay: (message, excludedPeerKey) => transport.relay(message, excludedPeerKey),
     onProtocolViolation: (peerKey, reason, connection) =>
         transport.reportProtocolViolation(peerKey, reason, connection),
 });
 
 transport = createHyperswarmTransport({
-    framingVersion: TRANSPORT_FRAMING_VERSION,
-    requiredNegentropyVersion: NEGENTROPY_VERSION,
+    wireVersion: WIRE_PROTOCOL_VERSION,
     payloadLimits: {
         maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
@@ -240,9 +233,8 @@ transport = createHyperswarmTransport({
     syncStats,
     buildInitialPing: buildPingMessage,
     onPing: (peerKey, message, connection) => peerSyncCoordinator.handlePing(peerKey, message, connection),
-    onQueue: (peerKey, message, connection, page) => queueCoordinator.handleMessage(
+    onQueue: (peerKey, _message, connection, page) => queueCoordinator.handleMessage(
         peerKey,
-        message,
         connection,
         page,
     ),
@@ -398,12 +390,7 @@ function shortName(peerKey: string): string {
 }
 
 function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperMessageBase, 'type'> & { type: T } {
-    return {
-        type,
-        time: new Date().toISOString(),
-        node: nodeInfo?.name || config.nodeName,
-        relays: [],
-    };
+    return { type };
 }
 
 async function buildPingMessage(): Promise<PingMessage> {
@@ -411,9 +398,10 @@ async function buildPingMessage(): Promise<PingMessage> {
 
     return {
         ...createBaseMessage('ping'),
-        peers: peerDirectory.getKnownDids(),
-        capabilities,
-        transportFramingVersion: TRANSPORT_FRAMING_VERSION,
+        version: WIRE_PROTOCOL_VERSION,
+        name: nodeInfo?.name || config.nodeName,
+        peerDids: peerDirectory.getKnownDids(),
+        ...capabilities,
     };
 }
 
@@ -728,7 +716,7 @@ export const __test = {
                 peerName: shortName(peerKey),
                 nodeName: 'test-peer',
             }),
-            peerTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+            wireVersion: WIRE_PROTOCOL_VERSION,
             ...connectionInfoOverrides,
         } as ConnectionInfo);
     },
@@ -772,9 +760,11 @@ export const __test = {
 
     async receiveMsg(peerKey: string, msg: Record<string, unknown>): Promise<void> {
         const type = typeof msg.type === 'string' ? msg.type : 'unknown';
+        const needsRound = type === 'neg_open' || type === 'neg_msg' || type === 'neg_close'
+            || type === 'ops_offer' || type === 'ops_req' || type === 'ops_push' || type === 'ops_ack';
         await transport.receiveMessage(peerKey, {
             ...createBaseMessage(type as HyperMessage['type']),
-            round: negentropyCoordinator.getExpectedInboundRound(peerKey, type),
+            ...(needsRound ? { round: negentropyCoordinator.getExpectedInboundRound(peerKey, type) } : {}),
             ...msg,
         });
         await transport.waitForIdleWrites();
@@ -818,7 +808,7 @@ export const __test = {
             orderedCatchupRetryAfter: conn.orderedCatchupRetryAfter,
             initialPingSent: conn.initialPingSent,
             initialPingReceived: conn.initialPingReceived,
-            peerTransportFramingVersion: conn.peerTransportFramingVersion,
+            wireVersion: conn.wireVersion,
             terminationStarted: conn.terminationStarted,
         };
     },

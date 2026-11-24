@@ -19,6 +19,7 @@ export interface ConnectionInfo {
     peerName: string;
     nodeName: string;
     lastSeen: number;
+    wireVersion: number | null;
     capabilities: NegotiatedPeerCapabilities;
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
@@ -32,7 +33,6 @@ export interface ConnectionInfo {
     initialPingPromise: Promise<void>;
     initialPingReceived: boolean;
     lastProcessedPingAt: number;
-    peerTransportFramingVersion: number | null;
     protocolViolationReported: boolean;
     terminationStarted: boolean;
     inboundBuffer: Buffer;
@@ -55,14 +55,10 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
         lastSeen: now,
+        wireVersion: null,
         capabilities: {
-            version: null,
-            orderedCatchup: false,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: false,
-            operationCount: null,
-            orderedOperationCount: null,
-            latestSignedTimestamp: null,
+            ordered: null,
+            latestTs: null,
         },
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
@@ -76,7 +72,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         initialPingPromise: Promise.resolve(),
         initialPingReceived: false,
         lastProcessedPingAt: 0,
-        peerTransportFramingVersion: null,
         protocolViolationReported: false,
         terminationStarted: false,
         inboundBuffer: Buffer.alloc(0),

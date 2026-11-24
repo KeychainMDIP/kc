@@ -42,8 +42,8 @@ interface QueueCoordinatorOptions {
     getNodeKey(): string;
     getConnection(peerKey: string): ConnectionInfo | undefined;
     requestRepair(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
-    createQueueMessage(): Omit<QueueMessage, 'data'>;
-    relay(message: QueueMessage): Promise<void>;
+    createQueueMessage(): Omit<QueueMessage, 'operations'>;
+    relay(message: QueueMessage, excludedPeerKey?: string): Promise<void>;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
     now?: () => number;
     maxRecentOutcomes?: number;
@@ -109,13 +109,12 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             return false;
         }
         let relayed = true;
-        for (const data of pages) {
+        for (const operations of pages) {
             try {
                 await options.relay({
                     ...options.createQueueMessage(),
-                    relays: [peerKey],
-                    data,
-                });
+                    operations,
+                }, peerKey);
             }
             catch (error) {
                 relayed = false;
@@ -299,7 +298,6 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
 
     async function processMessage(
         peerKey: string,
-        message: QueueMessage,
         connection: ConnectionInfo,
         page: ValidatedOperationPage,
     ): Promise<void> {
@@ -348,7 +346,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 imported = await options.getImportPipeline().enqueue({
                     kind: 'remote',
                     name: peerKey,
-                    node: message.node,
+                    node: connection.nodeName,
                     data: operations,
                     queueGossip: true,
                     onPersistedPage: async persisted => {
@@ -474,7 +472,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
             }
             await options.relay({
                 ...options.createQueueMessage(),
-                data: batch,
+                operations: batch,
             });
             options.syncStats.queueOpsRelayed += batch.length;
             for (const sample of collectQueueDelaySamples(batch)) {
@@ -502,12 +500,11 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         },
         handleMessage(
             peerKey: string,
-            message: QueueMessage,
             connection: ConnectionInfo,
             page: ValidatedOperationPage,
         ): Promise<void> {
             return accepting
-                ? trackWork(processMessage(peerKey, message, connection, page))
+                ? trackWork(processMessage(peerKey, connection, page))
                 : Promise.resolve();
         },
         handleDisconnected(

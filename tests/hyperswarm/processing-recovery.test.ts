@@ -466,13 +466,13 @@ describe('Gatekeeper processing recovery', () => {
         const onFailure = jest.fn(async () => {});
         const sendToPeer = jest.fn(() => true);
         const coordinator = createOrderedCatchupCoordinator({
-            version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
+            maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
             syncStore: new InMemoryOperationSyncStore(), importPipeline: pipeline,
             syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer,
+            createBaseMessage: type => ({ type }), sendToPeer,
             sendBulkToPeer: async () => sendToPeer(),
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
             onProtocolViolation: jest.fn(),
@@ -480,14 +480,14 @@ describe('Gatekeeper processing recovery', () => {
         try {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
+                type: 'ordered_catchup_push', sessionId: 'session',
                 data: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();
             const sent = sendToPeer.mock.calls.length;
             // An already requested prefetched page may arrive while the worker waits.
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
+                type: 'ordered_catchup_push', sessionId: 'session',
                 data: [orderedOperation], cursor: { syncOrder: 2, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await jest.advanceTimersByTimeAsync(121_000);
@@ -529,12 +529,12 @@ describe('Gatekeeper processing recovery', () => {
         });
         const onFailure = jest.fn(async () => {});
         const coordinator = createOrderedCatchupCoordinator({
-            version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
+            maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
             syncStore: store, importPipeline: pipeline, syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer: () => true,
+            createBaseMessage: type => ({ type }), sendToPeer: () => true,
             sendBulkToPeer: async () => true,
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
             onProtocolViolation: jest.fn(),
@@ -542,7 +542,7 @@ describe('Gatekeeper processing recovery', () => {
         try {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
+                type: 'ordered_catchup_push', sessionId: 'session',
                 data: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();

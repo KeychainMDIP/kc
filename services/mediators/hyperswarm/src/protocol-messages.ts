@@ -3,26 +3,27 @@ import type { SyncStoreOrderedCursor } from './db/types.js';
 import type {
     NegentropyFrame,
     NegentropyWindowPayload,
-    PeerCapabilities,
+    OrderedCatchupCapability,
 } from './negentropy/protocol.js';
+
+export const WIRE_PROTOCOL_VERSION = 2;
 
 export interface HyperMessageBase {
     type: string;
-    time: string;
-    node: string;
-    relays: string[];
 }
 
 export interface PingMessage extends HyperMessageBase {
     type: 'ping';
-    peers: string[];
-    capabilities?: PeerCapabilities;
-    transportFramingVersion: number;
+    version: typeof WIRE_PROTOCOL_VERSION;
+    name?: string;
+    peerDids?: string[];
+    latestTs?: number;
+    ordered?: OrderedCatchupCapability;
 }
 
 export interface QueueMessage extends HyperMessageBase {
     type: 'queue';
-    data: Operation[];
+    operations: Operation[];
 }
 
 export type NativeNegentropyFrame = string | Uint8Array;

@@ -23,10 +23,9 @@ const limits = {
     maxIdsPerRequest: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
     maxFrameBytes: 0, maxRecordsPerWindow: 25_000,
 };
-const base = { node: 'test', time: '', relays: [] };
+const base = {};
 const ping = {
-    ...base, type: 'ping' as const, peers: [], transportFramingVersion: 1,
-    capabilities: { negentropyVersion: 2 },
+    type: 'ping' as const, version: 2 as const, name: 'test', peerDids: [],
 };
 
 class Socket extends EventEmitter {
@@ -86,14 +85,14 @@ async function createHarness() {
     let queue!: ReturnType<typeof createQueueCoordinator>;
     let negentropy!: ReturnType<typeof createNegentropyCoordinator>;
     const transport = createHyperswarmTransport({
-        framingVersion: 1, requiredNegentropyVersion: 2, payloadLimits: limits, syncStats: stats,
+        wireVersion: 2, payloadLimits: limits, syncStats: stats,
         maxPeerStates: 4, maxMessageBytes: 1024 * 1024,
         maxOutboundBytesPerConnection: 4096, maxOutboundBytesTotal: 8192,
         buildInitialPing: async () => ping,
         onPing: (_key, message, connection) => {
-            connection.capabilities = normalizePeerCapabilities(message.capabilities);
+            connection.capabilities = normalizePeerCapabilities(message);
         },
-        onQueue: (key, message, connection, page) => queue.handleMessage(key, message, connection, page),
+        onQueue: (key, _message, connection, page) => queue.handleMessage(key, connection, page),
         onSyncMessage: (key, message) => {
             if (message.type === 'ordered_catchup_push' || message.type === 'ordered_catchup_done'
                 || message.type === 'ordered_catchup_req') { return; }
@@ -106,7 +105,7 @@ async function createHarness() {
         onRelayFailure: (key, connection) => queue.handleRelayFailure(key, connection),
     });
     negentropy = createNegentropyCoordinator({
-        version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+        wireVersion: 2, frameSizeLimit: 0,
         maxRecordsPerWindow: 25_000, maxRoundsPerSession: 64,
         maxIdsPerRequest: 1_000, maxIdsPerLookup: 32,
         maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
@@ -115,7 +114,7 @@ async function createHarness() {
         operationPages: pages,
         getConnection: key => transport.getConnection(key),
         createSessionId: key => `session-${key}`,
-        createBaseMessage: type => ({ ...base, type }),
+        createBaseMessage: type => ({ type }),
         sendToPeer: (key, message) => transport.sendToPeer(key, message),
         sendBulkToPeer: (key, message) => transport.sendBulkToPeer(key, message),
         canStartBackgroundPrebuild: () => false,
@@ -130,7 +129,8 @@ async function createHarness() {
         repairIntervalMs: 300_000, gatekeeper, cipher, syncStats: stats, bulkReads,
         operationPages: pages, getImportPipeline: () => pipeline, getNodeKey: () => 'local',
         getConnection: key => transport.getConnection(key), requestRepair: repair,
-        createQueueMessage: () => ({ ...base, type: 'queue' }), relay: message => transport.relay(message),
+        createQueueMessage: () => ({ type: 'queue' }),
+        relay: (message, excludedPeerKey) => transport.relay(message, excludedPeerKey),
         onProtocolViolation: (key, reason, connection) => transport.reportProtocolViolation(key, reason, connection),
     });
     async function send(socket: Socket, message: unknown) {
@@ -164,7 +164,7 @@ describe('hostile peer integration', () => {
             await h.connect(3);
             const helper = new TestHelper(h.gatekeeper, h.cipher);
             const operation = await helper.createAgentOp(h.cipher.generateRandomJwk(), { registry: 'hyperswarm' });
-            const message = { ...base, type: 'queue' as const, data: [operation] };
+            const message = { type: 'queue' as const, operations: [operation] };
             recipient.blocked = true;
             for (let i = 0; i < 30; i += 1) {
                 pendingWrites.push(h.transport.sendBulkToPeer(recipient.key, message));
@@ -212,7 +212,7 @@ describe('hostile peer integration', () => {
 
             const helper = new TestHelper(h.gatekeeper, h.cipher);
             const valid = await helper.createAgentOp(h.cipher.generateRandomJwk(), { registry: 'hyperswarm' });
-            const message = (operation: Operation) => ({ ...base, type: 'queue', data: [operation] });
+            const message = (operation: Operation) => ({ type: 'queue', operations: [operation] });
             const first = h.send(sockets[0], message(valid));
             await started.promise;
             const secondOp = await helper.createAgentOp(h.cipher.generateRandomJwk(), { registry: 'hyperswarm' });
@@ -240,7 +240,7 @@ describe('hostile peer integration', () => {
             const output: Promise<boolean>[] = [];
             sockets[3].blocked = true;
             for (let index = 0; index < 30; index += 1) {
-                output.push(h.transport.sendBulkToPeer(sockets[3].key, { ...base, type: 'queue', data: [valid] }));
+                output.push(h.transport.sendBulkToPeer(sockets[3].key, { type: 'queue', operations: [valid] }));
             }
             expect(h.transport.getAccounting().outboundBytes).toBeLessThanOrEqual(8192);
             expect(h.stats.hardening.outboundBudgetRefusals).toBeGreaterThan(0);
@@ -259,7 +259,7 @@ describe('hostile peer integration', () => {
             expect(h.stats.hardening.gossipRepairsStarted).toBe(1);
 
             for (let index = 4; index < 12; index += 1) {
-                await h.send(sockets[index], { ...base, type: 'queue', data: Array(301).fill(valid) });
+                await h.send(sockets[index], { type: 'queue', operations: Array(301).fill(valid) });
                 expect(sockets[index].destroyed).toBe(true);
                 const reconnect = await h.connect(index + 1);
                 expect(reconnect.destroyed).toBe(true);
@@ -283,7 +283,7 @@ describe('hostile peer integration', () => {
             const helper = new TestHelper(h.gatekeeper, h.cipher);
             const rejected = await helper.createAgentOp(h.cipher.generateRandomJwk(), { registry: 'hyperswarm' });
             rejected.signature!.value = '0'.repeat(128);
-            await h.send(peer, { ...base, type: 'queue', data: [rejected] });
+            await h.send(peer, { type: 'queue', operations: [rejected] });
             expect(await h.store.count()).toBe(1);
             expect(h.stats.hardening.terminalRecordsPersisted).toBe(1);
             expect(h.stats.protocolViolationCooldowns).toBe(0);
@@ -292,7 +292,7 @@ describe('hostile peer integration', () => {
 
             const invalid = structuredClone(rejected);
             invalid.created = 'tampered';
-            await h.send(peer, { ...base, type: 'queue', data: [invalid] });
+            await h.send(peer, { type: 'queue', operations: [invalid] });
             expect(peer.destroyed).toBe(true);
             expect(h.stats.hardening.malformedQueueOperations).toBe(1);
             expect(await h.store.count()).toBe(1);
@@ -362,8 +362,8 @@ describe('hostile peer integration', () => {
             },
         });
         const transport = createHyperswarmTransport({
-            framingVersion: 1, requiredNegentropyVersion: 2, payloadLimits: limits, syncStats: stats,
-            buildInitialPing: async () => ping, onPing: (_key, message) => directory.addPeers(message.peers),
+            wireVersion: 2, payloadLimits: limits, syncStats: stats,
+            buildInitialPing: async () => ping, onPing: (_key, message) => directory.addPeers(message.peerDids ?? []),
             onQueue: () => undefined, onSyncMessage: () => undefined, onDisconnected: () => undefined,
         });
         try {
@@ -373,7 +373,7 @@ describe('hostile peer integration', () => {
                 const socket = new Socket(id);
                 transport.addConnection(socket as unknown as HyperswarmConnection);
                 await transport.getConnection(socket.key)!.initialPingPromise;
-                await transport.processInboundPeerData(socket.key, encodeFramedMessage(JSON.stringify({ ...ping, peers: dids })));
+                await transport.processInboundPeerData(socket.key, encodeFramedMessage(JSON.stringify({ ...ping, peerDids: dids })));
             }
             expect(directory.getMetrics()).toMatchObject({ queued: 8, active: 2, records: 0 });
             expect(directory.getMetrics().admissionDrops).toBeGreaterThan(0);

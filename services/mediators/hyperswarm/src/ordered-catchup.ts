@@ -29,7 +29,6 @@ export type ExpectedOrderedCatchupRequestReason =
 export interface OrderedCatchupDecisionOptions {
     localOperationCount: number;
     peerCapabilities: NegotiatedPeerCapabilities;
-    requiredVersion: number;
     windowSize: number;
 }
 
@@ -43,7 +42,6 @@ export interface ExpectedOrderedCatchupRequestOptions {
     localOperationCount: number;
     localOrderedOperationCount: number;
     peerCapabilities: NegotiatedPeerCapabilities;
-    requiredVersion: number;
     windowSize: number;
 }
 
@@ -96,34 +94,24 @@ export function isOrderedCursorAfter(next: SyncStoreOrderedCursor, previous: Syn
 }
 
 export function getOrderedCatchupDecision(options: OrderedCatchupDecisionOptions): OrderedCatchupDecision {
-    const peer = options.peerCapabilities;
+    const peer = options.peerCapabilities.ordered;
     const localOperationCount = normalizeCount(options.localOperationCount);
-    const peerOperationCount = peer.operationCount;
-    const peerOrderedOperationCount = peer.orderedOperationCount;
     const windowSize = Math.max(1, normalizeCount(options.windowSize));
 
-    if (peer.orderedCatchup !== true || peer.orderedCatchupVersion !== options.requiredVersion) {
+    if (!peer) {
         return { useOrderedCatchup: false, reason: 'peer_unsupported', gap: 0 };
     }
 
-    if (peer.orderedCatchupReady !== true) {
+    if (!peer.sourceReady) {
         return { useOrderedCatchup: false, reason: 'peer_unready', gap: 0 };
     }
 
-    if (peerOperationCount === null || peerOrderedOperationCount === null) {
-        return { useOrderedCatchup: false, reason: 'peer_counts_missing', gap: 0 };
-    }
-
-    if (peerOperationCount !== peerOrderedOperationCount) {
-        return { useOrderedCatchup: false, reason: 'peer_ordered_count_mismatch', gap: 0 };
-    }
-
-    const gap = peerOperationCount - localOperationCount;
+    const gap = peer.count - localOperationCount;
     if (gap <= 0) {
         return { useOrderedCatchup: false, reason: 'peer_not_ahead', gap };
     }
 
-    const reason = getOrderedCatchupReason(localOperationCount, peerOperationCount, windowSize);
+    const reason = getOrderedCatchupReason(localOperationCount, peer.count, windowSize);
     if (reason) {
         return { useOrderedCatchup: true, reason, gap };
     }
@@ -134,30 +122,25 @@ export function getOrderedCatchupDecision(options: OrderedCatchupDecisionOptions
 export function getExpectedOrderedCatchupRequestDecision(
     options: ExpectedOrderedCatchupRequestOptions,
 ): ExpectedOrderedCatchupRequestDecision {
-    const peer = options.peerCapabilities;
+    const peer = options.peerCapabilities.ordered;
     const localOperationCount = normalizeCount(options.localOperationCount);
     const localOrderedOperationCount = normalizeCount(options.localOrderedOperationCount);
-    const peerOperationCount = peer.operationCount;
     const windowSize = Math.max(1, normalizeCount(options.windowSize));
 
     if (localOperationCount === 0 || localOperationCount !== localOrderedOperationCount) {
         return { expectRequest: false, reason: 'local_unready', gap: 0 };
     }
 
-    if (peer.orderedCatchup !== true || peer.orderedCatchupVersion !== options.requiredVersion) {
+    if (!peer) {
         return { expectRequest: false, reason: 'peer_unsupported', gap: 0 };
     }
 
-    if (peerOperationCount === null) {
-        return { expectRequest: false, reason: 'peer_counts_missing', gap: 0 };
-    }
-
-    const gap = localOperationCount - peerOperationCount;
+    const gap = localOperationCount - peer.count;
     if (gap <= 0) {
         return { expectRequest: false, reason: 'peer_not_behind', gap };
     }
 
-    const reason = getOrderedCatchupReason(peerOperationCount, localOperationCount, windowSize);
+    const reason = getOrderedCatchupReason(peer.count, localOperationCount, windowSize);
     if (reason) {
         return { expectRequest: true, reason, gap };
     }

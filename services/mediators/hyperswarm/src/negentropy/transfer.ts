@@ -61,14 +61,17 @@ export function validateOperationPage(
     if (data.length > maxOpsPerPush) {
         return { ok: false, reason: `operation page exceeds ${maxOpsPerPush} operations` };
     }
+    if (maxBytesPerPush < 2) {
+        return { ok: false, reason: `operation page exceeds ${maxBytesPerPush} bytes` };
+    }
 
-    let bytes = 0;
+    let bytes = 2;
     for (let index = 0; index < data.length; index += 1) {
         const measured = measureOperation(data[index], index, maxBytesPerPush);
         if (!measured.ok) {
             return measured;
         }
-        bytes += measured.value;
+        bytes += measured.value + (index > 0 ? 1 : 0);
         if (bytes > maxBytesPerPush) {
             return { ok: false, reason: `operation page exceeds ${maxBytesPerPush} bytes` };
         }
@@ -171,7 +174,7 @@ export function chunkOperationsForPush(
 
     const batches: Operation[][] = [];
     let current: Operation[] = [];
-    let currentBytes = 0;
+    let currentBytes = 2;
 
     for (let index = 0; index < operations.length; index += 1) {
         const operation = operations[index];
@@ -180,17 +183,21 @@ export function chunkOperationsForPush(
             throw new Error(measured.reason);
         }
         const operationBytes = measured.value;
+        if (operationBytes + 2 > maxBytesPerPush) {
+            throw new Error(`operation at index ${index} exceeds ${maxBytesPerPush} bytes`);
+        }
         const exceedsCount = current.length >= maxOpsPerPush;
-        const exceedsBytes = current.length > 0 && (currentBytes + operationBytes) > maxBytesPerPush;
+        const nextBytes = currentBytes + operationBytes + (current.length > 0 ? 1 : 0);
+        const exceedsBytes = nextBytes > maxBytesPerPush;
 
         if (exceedsCount || exceedsBytes) {
             batches.push(current);
             current = [];
-            currentBytes = 0;
+            currentBytes = 2;
         }
 
         current.push(operation);
-        currentBytes += operationBytes;
+        currentBytes += operationBytes + (current.length > 1 ? 1 : 0);
     }
 
     if (current.length > 0) {

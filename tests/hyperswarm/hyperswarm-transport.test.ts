@@ -87,14 +87,8 @@ class FakeConnection extends EventEmitter {
 function ping(overrides: Record<string, unknown> = {}) {
     return {
         type: 'ping' as const,
-        time: '',
-        node: 'peer',
-        relays: [],
-        peers: [],
-        transportFramingVersion: 1,
-        capabilities: {
-            negentropyVersion: 2,
-        },
+        version: 2 as const,
+        name: 'peer',
         ...overrides,
     };
 }
@@ -128,8 +122,7 @@ function createTransport(overrides: {
     const onSyncMessage = overrides.onSyncMessage ?? jest.fn<(peerKey: string, message: SyncMessage, connection: ConnectionInfo) => void>();
     const onDisconnected = overrides.onDisconnected ?? jest.fn();
     const transport = createHyperswarmTransport({
-        framingVersion: 1,
-        requiredNegentropyVersion: 2,
+        wireVersion: 2,
         payloadLimits,
         syncStats,
         now: overrides.now,
@@ -143,7 +136,7 @@ function createTransport(overrides: {
         maxOutboundBytesTotal: overrides.maxOutboundBytesTotal,
         staleConnectionMs: overrides.staleConnectionMs,
         writeTimeoutMs: overrides.writeTimeoutMs,
-        buildInitialPing: overrides.buildInitialPing ?? (async () => ping({ node: 'local' })),
+        buildInitialPing: overrides.buildInitialPing ?? (async () => ping({ name: 'local' })),
         onPing,
         onQueue,
         onSyncMessage,
@@ -190,14 +183,14 @@ describe('hyperswarm transport routing', () => {
 
         const messages = [
             ping(),
-            { type: 'queue', time: '', node: 'peer', relays: [], data: [] },
-            { type: 'neg_close', time: '', node: 'peer', relays: [], sessionId: 's', windowId: 'w', round: 0 },
+            { type: 'queue', operations: [] },
+            { type: 'neg_close', sessionId: 's', windowId: 'w', round: 0 },
         ].map(message => encodeFramedMessage(JSON.stringify(message)));
 
         await transport.processInboundPeerData(peerKey, Buffer.concat(messages));
 
         expect(routes).toEqual(['ping', 'queue', 'sync']);
-        expect(onQueue.mock.calls[0][3]).toEqual({ operations: [], bytes: 0 });
+        expect(onQueue.mock.calls[0][3]).toEqual({ operations: [], bytes: 2 });
     });
 
     it('rejects a raw initial ping as malformed framing', async () => {
@@ -227,8 +220,8 @@ describe('hyperswarm transport routing', () => {
             peerName: 'peer',
         }));
         const input = Buffer.concat([
-            encodeFramedMessage(JSON.stringify(ping({ transportFramingVersion: 2 }))),
-            encodeFramedMessage(JSON.stringify({ type: 'queue', time: '', node: 'peer', relays: [], data: [] })),
+            encodeFramedMessage(JSON.stringify(ping({ version: 3 }))),
+            encodeFramedMessage(JSON.stringify({ type: 'queue', operations: [] })),
         ]);
 
         await transport.processInboundPeerData(peerKey, input);
@@ -236,17 +229,43 @@ describe('hyperswarm transport routing', () => {
         expect(onPing).not.toHaveBeenCalled();
         expect(onQueue).not.toHaveBeenCalled();
         expect(connection.destroyed).toBe(true);
-        expect(syncStats.transportFramingIncompatibilityClosures).toBe(1);
+        expect(syncStats.wireVersionIncompatibilityClosures).toBe(1);
+        expect(syncStats.protocolViolationCooldowns).toBe(0);
+        expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
+    });
+
+    it('classifies a legacy ping as incompatible without a punitive strike', async () => {
+        const peerKey = Buffer.alloc(32, 0x2a).toString('hex');
+        const connection = new FakeConnection(0x2a);
+        const { transport, syncStats, onPing } = createTransport();
+        transport.setConnection(peerKey, createConnectionInfo({
+            connection: connection as unknown as HyperswarmConnection,
+            peerName: 'peer',
+        }));
+
+        await transport.processInboundPeerData(peerKey, encodeFramedMessage(JSON.stringify({
+            type: 'ping',
+            time: '',
+            node: 'legacy-peer',
+            relays: [],
+            peers: [],
+            transportFramingVersion: 1,
+            capabilities: { negentropyVersion: 1 },
+        })));
+
+        expect(onPing).not.toHaveBeenCalled();
+        expect(connection.destroyed).toBe(true);
+        expect(syncStats.wireVersionIncompatibilityClosures).toBe(1);
         expect(syncStats.protocolViolationCooldowns).toBe(0);
         expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
     });
 
     it.each([
         ['missing', undefined],
-        ['unsupported', { negentropyVersion: 1 }],
-    ])('closes a peer with %s Negentropy capabilities before routing application traffic', async (
+        ['unsupported', 1],
+    ])('closes a peer with %s wire version before routing application traffic', async (
         _case,
-        capabilities,
+        version,
     ) => {
         const peerKey = Buffer.alloc(32, 0x29).toString('hex');
         const connection = new FakeConnection(0x29);
@@ -256,8 +275,8 @@ describe('hyperswarm transport routing', () => {
             peerName: 'peer',
         }));
         const input = Buffer.concat([
-            encodeFramedMessage(JSON.stringify(ping({ capabilities }))),
-            encodeFramedMessage(JSON.stringify({ type: 'queue', time: '', node: 'peer', relays: [], data: [] })),
+            encodeFramedMessage(JSON.stringify(ping({ version }))),
+            encodeFramedMessage(JSON.stringify({ type: 'queue', operations: [] })),
         ]);
 
         await transport.processInboundPeerData(peerKey, input);
@@ -265,7 +284,7 @@ describe('hyperswarm transport routing', () => {
         expect(onPing).not.toHaveBeenCalled();
         expect(onQueue).not.toHaveBeenCalled();
         expect(connection.destroyed).toBe(true);
-        expect(syncStats.negentropyVersionIncompatibilityClosures).toBe(1);
+        expect(syncStats.wireVersionIncompatibilityClosures).toBe(1);
         expect(syncStats.protocolViolationCooldowns).toBe(0);
         expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
     });
@@ -285,14 +304,14 @@ describe('hyperswarm transport routing', () => {
 
         await transport.receiveMessage(peerKey, ping());
         currentTime += 9_999;
-        await transport.receiveMessage(peerKey, ping({ node: 'too-soon' }));
+        await transport.receiveMessage(peerKey, ping({ name: 'too-soon' }));
 
         expect(onPing).toHaveBeenCalledTimes(1);
         expect(state.lastSeen).toBe(currentTime);
         expect(state.nodeName).toBe('peer');
 
         currentTime += 1;
-        await transport.receiveMessage(peerKey, ping({ node: 'accepted' }));
+        await transport.receiveMessage(peerKey, ping({ name: 'accepted' }));
         expect(onPing).toHaveBeenCalledTimes(2);
         expect(state.nodeName).toBe('accepted');
     });
@@ -356,8 +375,7 @@ describe('hyperswarm transport routing', () => {
             'maxMessageBytes must be a positive safe integer',
         );
         expect(() => createHyperswarmTransport({
-            framingVersion: 1,
-            requiredNegentropyVersion: 2,
+            wireVersion: 2,
             payloadLimits,
             syncStats: createMediatorSyncStats(),
             pingIntervalMs: 0,
@@ -368,8 +386,7 @@ describe('hyperswarm transport routing', () => {
             onDisconnected: () => undefined,
         })).toThrow('pingIntervalMs must be a positive finite number');
         expect(() => createHyperswarmTransport({
-            framingVersion: 1,
-            requiredNegentropyVersion: 2,
+            wireVersion: 2,
             payloadLimits,
             syncStats: createMediatorSyncStats(),
             staleConnectionMs: Number.NaN,
@@ -388,16 +405,21 @@ describe('hyperswarm transport routing', () => {
         const peerKey = Buffer.alloc(32, 0x28).toString('hex');
         const connection = new FakeConnection(0x28);
         const { transport } = createTransport();
-        transport.setConnection(peerKey, createConnectionInfo({
+        const state = createConnectionInfo({
             connection: connection as unknown as HyperswarmConnection,
             peerName: 'peer',
-        }));
+        });
+        state.initialPingSent = true;
+        transport.setConnection(peerKey, state);
 
         expect(transport.sendToPeer(peerKey, {
-            type: 'queue', time: 1, node: 'local', relays: [], data: [],
+            type: 'queue', operations: [], unknown: true,
         } as never)).toBe(false);
         expect(transport.sendToPeer(peerKey, {
-            type: 'queue', time: '', node: 'local', relays: [], data: 'invalid',
+            type: 'queue', operations: 'invalid',
+        } as never)).toBe(false);
+        expect(transport.sendToPeer(peerKey, {
+            type: 'ping', time: '', node: 'legacy', relays: [], peers: [],
         } as never)).toBe(false);
         expect(connection.writes).toHaveLength(0);
     });
@@ -411,11 +433,11 @@ describe('hyperswarm transport routing', () => {
             peerName: 'peer',
         });
         queueState.initialPingReceived = true;
-        queueState.peerTransportFramingVersion = 1;
+        queueState.wireVersion = 2;
         first.transport.setConnection(queuePeerKey, queueState);
 
         await first.transport.receiveMessage(queuePeerKey, {
-            type: 'queue', time: '', node: 'peer', relays: [], data: 'invalid',
+            type: 'queue', operations: 'invalid',
         });
         expect(first.onQueue).not.toHaveBeenCalled();
         expect(queueConnection.destroyed).toBe(true);
@@ -677,7 +699,7 @@ describe('hyperswarm transport resource bounds', () => {
             connection: connection as unknown as HyperswarmConnection,
             peerName: 'peer',
         }));
-        const message = { type: 'queue' as const, time: '', node: 'local', relays: [], data: [] };
+        const message = { type: 'queue' as const, operations: [] };
 
         const write = transport.sendBulkToPeer(peerKey, message);
         await nextTurn();
@@ -689,12 +711,9 @@ describe('hyperswarm transport resource bounds', () => {
         await transport.shutdown();
     });
 
-    const queueMessage = (node: string): QueueMessage => ({
+    const queueMessage = (name: string): QueueMessage => ({
         type: 'queue',
-        time: '',
-        node,
-        relays: [],
-        data: [],
+        operations: [{ type: name } as never],
     });
 
     it('does not schedule relay repair for a replacement when an older write fails', async () => {
@@ -778,7 +797,7 @@ describe('hyperswarm transport resource bounds', () => {
         const { transport } = createTransport({
             buildInitialPing: () => builds++ === 0
                 ? firstPing.promise
-                : Promise.resolve(ping({ node: 'replacement' })),
+                : Promise.resolve(ping({ name: 'replacement' })),
         });
         const first = new FakeConnection(0x40);
         const replacement = new FakeConnection(0x40);
@@ -799,7 +818,7 @@ describe('hyperswarm transport resource bounds', () => {
         await nextTurn();
         expect(stopped).toBe(false);
 
-        firstPing.resolve(ping({ node: 'first' }));
+        firstPing.resolve(ping({ name: 'first' }));
         await shutdown;
         expect(stopped).toBe(true);
     });
@@ -810,7 +829,7 @@ describe('hyperswarm transport resource bounds', () => {
         const { transport } = createTransport({
             buildInitialPing: () => builds++ === 0
                 ? firstPing.promise
-                : Promise.resolve(ping({ node: 'replacement' })),
+                : Promise.resolve(ping({ name: 'replacement' })),
         });
         const first = new FakeConnection(0x41);
         const replacement = new FakeConnection(0x41);
@@ -827,7 +846,7 @@ describe('hyperswarm transport resource bounds', () => {
         expect(reconnect.destroyed).toBe(true);
         expect(transport.getConnection(reconnect.remotePublicKey.toString('hex'))).toBeUndefined();
 
-        firstPing.resolve(ping({ node: 'first' }));
+        firstPing.resolve(ping({ name: 'first' }));
         await transport.shutdown();
     });
 
@@ -941,7 +960,7 @@ describe('hyperswarm transport resource bounds', () => {
             connection: connection as unknown as HyperswarmConnection,
             peerName: 'peer',
         }));
-        const first = encodeFramedMessage(JSON.stringify(ping({ node: 'first' })));
+        const first = encodeFramedMessage(JSON.stringify(ping({ name: 'first' })));
         const second = encodeFramedMessage(JSON.stringify(queueMessage('second')));
         const input = Buffer.concat([first, second]);
 
@@ -1037,8 +1056,8 @@ describe('hyperswarm transport resource bounds', () => {
         connection.completeNextFlush();
         await nextTurn();
         expect(connection.writes).toHaveLength(2);
-        expect(decodeWrite(connection.writes[0]).node).toBe('first');
-        expect(decodeWrite(connection.writes[1]).node).toBe('second');
+        expect((decodeWrite(connection.writes[0]) as QueueMessage).operations[0].type).toBe('first');
+        expect((decodeWrite(connection.writes[1]) as QueueMessage).operations[0].type).toBe('second');
 
         connection.completeNextFlush();
         await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -1169,13 +1188,13 @@ describe('hyperswarm transport resource bounds', () => {
         const peerKey = connection.remotePublicKey.toString('hex');
         transport.addConnection(connection as unknown as HyperswarmConnection);
 
-        expect(transport.sendToPeer(peerKey, ping({ node: 'periodic' }))).toBe(false);
+        expect(transport.sendToPeer(peerKey, ping({ name: 'periodic' }))).toBe(false);
         expect(connection.writes).toHaveLength(0);
 
-        initialPing.resolve(ping({ node: 'initial' }));
+        initialPing.resolve(ping({ name: 'initial' }));
         await transport.getConnection(peerKey)?.initialPingPromise;
         expect(connection.writes).toHaveLength(1);
-        expect(decodeWrite(connection.writes[0])).toMatchObject({ type: 'ping', node: 'initial' });
+        expect(decodeWrite(connection.writes[0])).toMatchObject({ type: 'ping', name: 'initial' });
         await transport.shutdown();
     });
 

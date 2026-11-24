@@ -67,8 +67,7 @@ interface TransportAccounting {
 }
 
 export interface HyperswarmTransportOptions {
-    framingVersion: number;
-    requiredNegentropyVersion: number;
+    wireVersion: number;
     payloadLimits: ProtocolPayloadLimits;
     syncStats: MediatorSyncStats;
     buildInitialPing(): Promise<PingMessage>;
@@ -488,15 +487,10 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         peerKey: string,
         reason: string,
         expectedConnection: ConnectionInfo,
-        kind: 'transport_framing' | 'negentropy_version',
         details: Record<string, unknown> = {},
     ): void {
         const restriction = admission.noteCompatibilityMismatch(peerKey, reason);
-        if (kind === 'transport_framing') {
-            options.syncStats.transportFramingIncompatibilityClosures += 1;
-        } else {
-            options.syncStats.negentropyVersionIncompatibilityClosures += 1;
-        }
+        options.syncStats.wireVersionIncompatibilityClosures += 1;
         log.warn({
             peer: shortName(peerKey),
             reason,
@@ -647,7 +641,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         try {
             await queued.completion;
             if (message.type === 'queue') {
-                options.syncStats.hardening.gossipOperationsRelayed += message.data.length;
+                options.syncStats.hardening.gossipOperationsRelayed += message.operations.length;
             }
             return true;
         }
@@ -681,40 +675,20 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     }
 
     async function handlePing(peerKey: string, message: PingMessage, connection: ConnectionInfo): Promise<void> {
-        const peerTransportFramingVersion = Number.isInteger(message.transportFramingVersion)
-            ? Number(message.transportFramingVersion)
+        const peerWireVersion = Number.isInteger(message.version)
+            ? Number(message.version)
             : null;
-        connection.peerTransportFramingVersion = peerTransportFramingVersion;
-        if (peerTransportFramingVersion !== options.framingVersion) {
+        connection.wireVersion = peerWireVersion;
+        if (peerWireVersion !== options.wireVersion) {
             closeIncompatiblePeer(
                 peerKey,
-                peerTransportFramingVersion === null
-                    ? 'missing_transport_framing_version'
-                    : 'unsupported_transport_framing_version',
+                peerWireVersion === null
+                    ? 'missing_wire_version'
+                    : 'unsupported_wire_version',
                 connection,
-                'transport_framing',
                 {
-                    peerTransportFramingVersion,
-                    requiredTransportFramingVersion: options.framingVersion,
-                },
-            );
-            return;
-        }
-
-        const peerNegentropyVersion = Number.isInteger(message.capabilities?.negentropyVersion)
-            ? Number(message.capabilities?.negentropyVersion)
-            : null;
-        if (peerNegentropyVersion !== options.requiredNegentropyVersion) {
-            closeIncompatiblePeer(
-                peerKey,
-                peerNegentropyVersion === null
-                    ? 'missing_negentropy_version'
-                    : 'unsupported_negentropy_version',
-                connection,
-                'negentropy_version',
-                {
-                    peerNegentropyVersion,
-                    requiredNegentropyVersion: options.requiredNegentropyVersion,
+                    peerWireVersion,
+                    requiredWireVersion: options.wireVersion,
                 },
             );
             return;
@@ -730,7 +704,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
         connection.initialPingReceived = true;
         connection.lastProcessedPingAt = receivedAt;
-        connection.nodeName = typeof message.node === 'string' ? message.node : 'anon';
+        connection.nodeName = message.name ?? 'anon';
         await options.onPing(peerKey, message, connection);
     }
 
@@ -746,7 +720,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             return;
         }
 
-        const envelope = validateHyperMessageEnvelope(value);
+        const envelope = validateHyperMessageEnvelope(value, options.wireVersion);
         if (!envelope.ok) {
             reportProtocolViolation(peerKey, 'invalid_message_envelope', connection, {
                 validationError: envelope.reason,
@@ -756,7 +730,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
 
         const message = envelope.value;
         connection.lastSeen = now();
-        log.debug(`received ${message.type} from: ${shortName(peerKey)} (${typeof message.node === 'string' ? message.node : 'anon'})`);
+        log.debug(`received ${message.type} from: ${shortName(peerKey)} (${connection.nodeName})`);
 
         if (message.type === 'ping') {
             await handlePing(peerKey, message, connection);
@@ -764,10 +738,10 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
 
         if (!connection.initialPingReceived
-            || connection.peerTransportFramingVersion !== options.framingVersion) {
+            || connection.wireVersion !== options.wireVersion) {
             reportProtocolViolation(peerKey, 'message_before_compatible_ping', connection, {
                 messageType: message.type,
-                requiredTransportFramingVersion: options.framingVersion,
+                requiredWireVersion: options.wireVersion,
             });
             return;
         }
@@ -983,7 +957,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         log.info(`received connection from: ${peerName}`);
     }
 
-    async function relay(message: HyperMessage): Promise<void> {
+    async function relay(message: HyperMessage, excludedPeerKey?: string): Promise<void> {
         const bulk = message.type === 'queue'
             || message.type === 'ordered_catchup_push'
             || message.type === 'ops_push';
@@ -991,7 +965,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         const failedRecipients: Array<[string, ConnectionInfo]> = [];
         for (const peerKey of Object.keys(connections)) {
             const connection = connections[peerKey];
-            if (!connection || message.relays.includes(peerKey)) continue;
+            if (!connection || peerKey === excludedPeerKey) continue;
             if (bulk) {
                 pending.push(sendAwaited(peerKey, message, connection).then(delivered => {
                     if (!delivered) failedRecipients.push([peerKey, connection]);

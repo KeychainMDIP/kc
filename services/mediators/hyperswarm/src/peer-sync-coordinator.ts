@@ -13,7 +13,6 @@ import {
 import {
     buildOrderedCatchupCapabilities,
     normalizePeerCapabilities,
-    supportsPeerNegentropy,
     type PeerCapabilities,
 } from './negentropy/protocol.js';
 import {
@@ -38,9 +37,7 @@ type OrderedCatchupCoordinator = ReturnType<typeof createOrderedCatchupCoordinat
 type SyncSource = 'connect' | 'periodic';
 
 interface PeerSyncCoordinatorOptions {
-    negentropyVersion: number;
-    orderedCatchupVersion: number;
-    transportFramingVersion: number;
+    wireVersion: number;
     windowSize: number;
     repairIntervalMs: number;
     syncStats: MediatorSyncStats;
@@ -80,8 +77,7 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
     }
 
     function supportsPeerNegentropyTransport(conn: ConnectionInfo): boolean {
-        return supportsPeerNegentropy(conn.capabilities, options.negentropyVersion)
-            && conn.peerTransportFramingVersion === options.transportFramingVersion;
+        return conn.wireVersion === options.wireVersion;
     }
 
     function buildCompatibilityContext(peerKey: string, conn: ConnectionInfo): object {
@@ -89,9 +85,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             peer: shortName(peerKey),
             node: conn.nodeName || 'anon',
             capabilities: conn.capabilities,
-            peerTransportFramingVersion: conn.peerTransportFramingVersion,
-            requiredNegentropyVersion: options.negentropyVersion,
-            requiredTransportFramingVersion: options.transportFramingVersion,
+            peerWireVersion: conn.wireVersion,
+            requiredWireVersion: options.wireVersion,
         };
     }
 
@@ -164,7 +159,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             const decision = getOrderedCatchupDecision({
                 localOperationCount,
                 peerCapabilities: conn.capabilities,
-                requiredVersion: options.orderedCatchupVersion,
                 windowSize: options.windowSize,
             });
             if (decision.useOrderedCatchup) {
@@ -199,7 +193,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             const decision = getOrderedCatchupDecision({
                 localOperationCount,
                 peerCapabilities: conn.capabilities,
-                requiredVersion: options.orderedCatchupVersion,
                 windowSize: options.windowSize,
             });
             if (decision.useOrderedCatchup && (!preferred || decision.gap > preferred.decision.gap)) {
@@ -296,7 +289,6 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
                     localOperationCount,
                     localOrderedOperationCount,
                     peerCapabilities: conn.capabilities,
-                    requiredVersion: options.orderedCatchupVersion,
                     windowSize: options.windowSize,
                 });
 
@@ -578,16 +570,19 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
             return;
         }
 
-        conn.capabilities = normalizePeerCapabilities(message.capabilities);
+        conn.capabilities = normalizePeerCapabilities(message);
         log.info(
             {
                 ...buildCompatibilityContext(peerKey, conn),
-                rawCapabilities: message.capabilities ?? null,
+                rawCapabilities: {
+                    latestTs: message.latestTs ?? null,
+                    ordered: message.ordered ?? null,
+                },
             },
             'peer capabilities received',
         );
-        if (Array.isArray(message.peers)) {
-            options.onPeersAdvertised(message.peers);
+        if (Array.isArray(message.peerDids)) {
+            options.onPeersAdvertised(message.peerDids);
         }
 
         if (options.getConnection(peerKey) === conn) {
@@ -711,10 +706,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
                 options.getSyncStore().getLatestSignedTimestamp(),
             ]);
             return {
-                negentropyVersion: options.negentropyVersion,
-                ...(latestSignedTimestamp === null ? {} : { latestSignedTimestamp }),
-                ...buildOrderedCatchupCapabilities({
-                    version: options.orderedCatchupVersion,
+                ...(latestSignedTimestamp === null ? {} : { latestTs: latestSignedTimestamp }),
+                ordered: buildOrderedCatchupCapabilities({
                     operationCount: status.operationCount,
                     orderedOperationCount: status.orderedOperationCount,
                 }),

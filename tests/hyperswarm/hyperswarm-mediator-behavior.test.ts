@@ -1065,10 +1065,7 @@ describe('hyperswarm mediator behavior', () => {
             : driver.nodeA.publicKey.toString('hex');
         const framedQueue = encodeFramedMessage(JSON.stringify({
             type: 'queue',
-            time: new Date().toISOString(),
-            node: 'fixture-source',
-            relays: [],
-            data: [arriving],
+            operations: [arriving],
         }));
         await targetNode.run(() => targetNode.mediator.__test.processInboundPeerData(sourceKey, framedQueue));
         await waitForPersistedOperation(targetNode, targetStore, arrivingId);

@@ -5,6 +5,7 @@ import type {
     PingMessage,
     QueueMessage,
 } from './protocol-messages.js';
+import { WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
 import { NEG_SYNC_ID_RE } from './negentropy/protocol.js';
 import {
     validateIdList,
@@ -19,11 +20,8 @@ import {
     MAX_ADVERTISED_DID_BYTES,
     MAX_ADVERTISED_PEERS,
     MAX_PROTOCOL_STRING_BYTES,
-    MAX_PROTOCOL_TIMESTAMP_BYTES,
-    MAX_RELAY_HINTS,
 } from './protocol-limits.js';
 
-const PEER_KEY_RE = /^[a-f0-9]{64}$/i;
 const MESSAGE_TYPES = new Set<HyperMessage['type']>([
     'ping',
     'queue',
@@ -41,6 +39,21 @@ const MESSAGE_TYPES = new Set<HyperMessage['type']>([
 
 type ProtocolValidationResult<T> = TransferValidationResult<T>;
 
+const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
+    ping: new Set(['type', 'version', 'name', 'peerDids', 'latestTs', 'ordered']),
+    queue: new Set(['type', 'operations']),
+    ordered_catchup_req: new Set(['type', 'sessionId', 'cursor']),
+    ordered_catchup_push: new Set(['type', 'sessionId', 'cursor', 'hasMore', 'data']),
+    ordered_catchup_done: new Set(['type', 'sessionId']),
+    neg_open: new Set(['type', 'sessionId', 'windowId', 'window', 'round', 'frame', 'previousWindowProgress']),
+    neg_msg: new Set(['type', 'sessionId', 'windowId', 'round', 'frame', 'windowProgress']),
+    neg_close: new Set(['type', 'sessionId', 'windowId', 'round', 'reason', 'windowProgress']),
+    ops_offer: new Set(['type', 'sessionId', 'windowId', 'round', 'offerId', 'ids']),
+    ops_req: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'offerId', 'ids', 'deferred']),
+    ops_push: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'page', 'hasMore', 'data']),
+    ops_ack: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'page', 'deferred']),
+};
+
 export interface ProtocolPayloadLimits extends OpsPushBatchingOptions {
     maxIdsPerRequest: number;
     maxFrameBytes: number;
@@ -53,6 +66,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function utf8Bytes(value: string): number {
     return Buffer.byteLength(value, 'utf8');
+}
+
+function validateKnownProperties(
+    value: Record<string, unknown>,
+    allowed: ReadonlySet<string>,
+    name: string,
+): string | null {
+    const unknown = Object.keys(value).find(key => !allowed.has(key));
+    return unknown === undefined ? null : `${name} contains unknown property ${unknown}`;
 }
 
 function validateBoundedString(value: unknown, name: string, maxBytes = MAX_PROTOCOL_STRING_BYTES): string | null {
@@ -74,6 +96,16 @@ function validateRequiredBoundedString(
     return (value as string).length === 0 ? `${name} must not be empty` : null;
 }
 
+function validateRequiredAsciiToken(value: unknown, name: string): string | null {
+    const error = validateRequiredBoundedString(value, name);
+    if (error) {
+        return error;
+    }
+    return /^[\x20-\x7e]+$/.test(value as string)
+        ? null
+        : `${name} must contain printable ASCII characters only`;
+}
+
 function validateSafeInteger(value: unknown, name: string, minimum = 0): string | null {
     if (!Number.isSafeInteger(value) || (value as number) < minimum) {
         return `${name} must be a safe integer >= ${minimum}`;
@@ -88,7 +120,8 @@ function validateCursor(value: unknown, name: string): string | null {
     if (!isObject(value)) {
         return `${name} must be an object`;
     }
-    return validateSafeInteger(value.syncOrder, `${name}.syncOrder`)
+    return validateKnownProperties(value, new Set(['syncOrder', 'id']), name)
+        ?? validateSafeInteger(value.syncOrder, `${name}.syncOrder`)
         ?? (typeof value.id !== 'string' || !NEG_SYNC_ID_RE.test(value.id)
             ? `${name}.id must be 64 hexadecimal characters`
             : null);
@@ -98,7 +131,8 @@ function validateWindowCursor(value: unknown, name: string): string | null {
     if (!isObject(value)) {
         return `${name} must be an object`;
     }
-    return validateSafeInteger(value.ts, `${name}.ts`)
+    return validateKnownProperties(value, new Set(['ts', 'id']), name)
+        ?? validateSafeInteger(value.ts, `${name}.ts`)
         ?? (typeof value.id !== 'string' || !NEG_SYNC_ID_RE.test(value.id)
             ? `${name}.id must be 64 hexadecimal characters`
             : null);
@@ -111,16 +145,21 @@ function validateWindowProgress(value: unknown, name: string): string | null {
     if (!isObject(value) || typeof value.cappedByRecords !== 'boolean') {
         return `${name} must contain a boolean cappedByRecords`;
     }
-    return value.lastCursor === undefined
-        ? null
-        : validateWindowCursor(value.lastCursor, `${name}.lastCursor`);
+    return validateKnownProperties(value, new Set(['cappedByRecords', 'lastCursor']), name)
+        ?? (value.lastCursor === undefined
+            ? null
+            : validateWindowCursor(value.lastCursor, `${name}.lastCursor`));
 }
 
 function validateWindow(value: unknown, maxRecords: number): string | null {
     if (!isObject(value)) {
         return 'window must be an object';
     }
-    const nameError = validateRequiredBoundedString(value.name, 'window.name');
+    const nameError = validateKnownProperties(
+        value,
+        new Set(['name', 'fromTs', 'toTs', 'maxRecords', 'order', 'after']),
+        'window',
+    ) ?? validateRequiredBoundedString(value.name, 'window.name');
     if (nameError) {
         return nameError;
     }
@@ -159,6 +198,10 @@ function validateFrame(value: unknown, maxFrameBytes: number): string | null {
     if (!isObject(value) || (value.encoding !== 'utf8' && value.encoding !== 'base64') || typeof value.data !== 'string') {
         return 'frame must contain a supported encoding and string data';
     }
+    const propertyError = validateKnownProperties(value, new Set(['encoding', 'data']), 'frame');
+    if (propertyError) {
+        return propertyError;
+    }
 
     if (value.encoding === 'utf8') {
         const bytes = utf8Bytes(value.data);
@@ -179,60 +222,67 @@ function validateFrame(value: unknown, maxFrameBytes: number): string | null {
         : null;
 }
 
-function validateCapabilities(value: unknown): string | null {
+function validateOrderedCapability(value: unknown): string | null {
     if (value === undefined) {
         return null;
     }
     if (!isObject(value)) {
-        return 'capabilities must be an object';
+        return 'ordered must be an object';
     }
-    for (const name of ['orderedCatchup', 'orderedCatchupReady'] as const) {
-        if (value[name] !== undefined && typeof value[name] !== 'boolean') {
-            return `capabilities.${name} must be a boolean`;
-        }
+    const propertyError = validateKnownProperties(value, new Set(['count', 'sourceReady']), 'ordered');
+    if (propertyError) {
+        return propertyError;
     }
-    for (const name of [
-        'negentropyVersion',
-        'orderedCatchupVersion',
-        'operationCount',
-        'orderedOperationCount',
-        'latestSignedTimestamp',
-    ] as const) {
-        if (value[name] !== undefined) {
-            const error = validateSafeInteger(value[name], `capabilities.${name}`);
-            if (error) {
-                return error;
-            }
-        }
+    const countError = validateSafeInteger(value.count, 'ordered.count');
+    if (countError) {
+        return countError;
+    }
+    if (typeof value.sourceReady !== 'boolean') {
+        return 'ordered.sourceReady must be a boolean';
+    }
+    if (value.sourceReady && value.count === 0) {
+        return 'ordered.sourceReady requires a non-zero count';
     }
     return null;
 }
 
 function validatePing(message: Record<string, unknown>): string | null {
-    if (!Array.isArray(message.peers) || message.peers.length > MAX_ADVERTISED_PEERS) {
-        return `peers must be an array of at most ${MAX_ADVERTISED_PEERS} DIDs`;
+    const versionError = validateSafeInteger(message.version, 'version');
+    if (versionError) {
+        return versionError;
     }
-    for (let index = 0; index < message.peers.length; index += 1) {
-        const did = message.peers[index];
-        if (typeof did !== 'string' || utf8Bytes(did) > MAX_ADVERTISED_DID_BYTES || !isValidDID(did)) {
-            return `peers[${index}] must be a valid DID of at most ${MAX_ADVERTISED_DID_BYTES} UTF-8 bytes`;
+    if (message.version !== WIRE_PROTOCOL_VERSION) {
+        return `version must be ${WIRE_PROTOCOL_VERSION}`;
+    }
+    if (message.name !== undefined) {
+        const nameError = validateBoundedString(message.name, 'name');
+        if (nameError) {
+            return nameError;
         }
     }
-    return validateCapabilities(message.capabilities);
-}
-
-function validateCommonEnvelope(message: Record<string, unknown>): string | null {
-    return validateBoundedString(message.time, 'time', MAX_PROTOCOL_TIMESTAMP_BYTES)
-        ?? validateBoundedString(message.node, 'node')
-        ?? (!Array.isArray(message.relays) || message.relays.length > MAX_RELAY_HINTS
-            ? `relays must be an array of at most ${MAX_RELAY_HINTS} peer keys`
-            : message.relays.some((relay: unknown) => typeof relay !== 'string' || !PEER_KEY_RE.test(relay))
-                ? 'relays must contain only 64-character hexadecimal peer keys'
-                : null);
+    if (message.latestTs !== undefined) {
+        const latestTsError = validateSafeInteger(message.latestTs, 'latestTs');
+        if (latestTsError) {
+            return latestTsError;
+        }
+    }
+    if (message.peerDids === undefined) {
+        return validateOrderedCapability(message.ordered);
+    }
+    if (!Array.isArray(message.peerDids) || message.peerDids.length > MAX_ADVERTISED_PEERS) {
+        return `peerDids must be an array of at most ${MAX_ADVERTISED_PEERS} DIDs`;
+    }
+    for (let index = 0; index < message.peerDids.length; index += 1) {
+        const did = message.peerDids[index];
+        if (typeof did !== 'string' || utf8Bytes(did) > MAX_ADVERTISED_DID_BYTES || !isValidDID(did)) {
+            return `peerDids[${index}] must be a valid DID of at most ${MAX_ADVERTISED_DID_BYTES} UTF-8 bytes`;
+        }
+    }
+    return validateOrderedCapability(message.ordered);
 }
 
 function validateSessionEnvelope(message: Record<string, unknown>): string | null {
-    const sessionError = validateRequiredBoundedString(message.sessionId, 'sessionId');
+    const sessionError = validateRequiredAsciiToken(message.sessionId, 'sessionId');
     if (sessionError) {
         return sessionError;
     }
@@ -243,7 +293,7 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
             ? 'hasMore must be a boolean'
             : null;
     }
-    return validateRequiredBoundedString(message.windowId, 'windowId')
+    return validateRequiredAsciiToken(message.windowId, 'windowId')
         ?? validateSafeInteger(message.round, 'round')
         ?? (message.type === 'ops_offer' ? validateSafeInteger(message.offerId, 'offerId') : null)
         ?? (message.type === 'ops_req' || message.type === 'ops_push' || message.type === 'ops_ack'
@@ -257,13 +307,27 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
             : null);
 }
 
-export function validateHyperMessageEnvelope(value: unknown): ProtocolValidationResult<HyperMessage> {
+export function validateHyperMessageEnvelope(
+    value: unknown,
+    deferIncompatiblePingVersion?: number,
+): ProtocolValidationResult<HyperMessage> {
     if (!isObject(value) || typeof value.type !== 'string' || !MESSAGE_TYPES.has(value.type as HyperMessage['type'])) {
         return { ok: false, reason: 'unknown or missing message type' };
     }
-    const commonError = validateCommonEnvelope(value);
-    if (commonError) {
-        return { ok: false, reason: commonError };
+    const incompatiblePing = deferIncompatiblePingVersion !== undefined
+        && value.type === 'ping'
+        && (value.version === undefined
+            || (Number.isSafeInteger(value.version) && value.version !== deferIncompatiblePingVersion));
+    if (incompatiblePing) {
+        return { ok: true, value: value as unknown as PingMessage };
+    }
+    const propertyError = validateKnownProperties(
+        value,
+        MESSAGE_PROPERTIES[value.type as HyperMessage['type']],
+        value.type,
+    );
+    if (propertyError) {
+        return { ok: false, reason: propertyError };
     }
     if (value.type === 'ping') {
         const pingError = validatePing(value);
@@ -287,7 +351,7 @@ export function validateQueueMessagePayload(
     if (Object.prototype.hasOwnProperty.call(message, 'deferred')) {
         return { ok: false, reason: 'deferred is not valid for queue' };
     }
-    return validateOperationPage(message.data, limits);
+    return validateOperationPage(message.operations, limits);
 }
 
 export function validateHyperMessagePayload(

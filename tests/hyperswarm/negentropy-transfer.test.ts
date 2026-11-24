@@ -40,7 +40,7 @@ describe('negentropy transfer batching helpers', () => {
     });
 
     it('chunks id lists with de-duplication', () => {
-        const ids = [h('A'), h('b'), h('c'), h('c'), h('d'), h('e')];
+        const ids = [h('a'), h('b'), h('c'), h('c'), h('d'), h('e')];
         const chunks = chunkIds(ids, 2);
         expect(chunks).toStrictEqual([
             [h('a'), h('b')],
@@ -115,7 +115,7 @@ describe('negentropy transfer batching helpers', () => {
 
     it('accepts an operation page at its exact count and byte limits', () => {
         const operations = [makeOp('a'), makeOp('b')];
-        const bytes = operations.reduce((total, operation) => total + estimateOperationBytes(operation), 0);
+        const bytes = Buffer.byteLength(JSON.stringify(operations), 'utf8');
 
         expect(validateOperationPage(operations, {
             maxOpsPerPush: operations.length,
@@ -123,6 +123,16 @@ describe('negentropy transfer batching helpers', () => {
         })).toStrictEqual({
             ok: true,
             value: { operations, bytes },
+        });
+    });
+
+    it('counts the brackets of an empty operation page', () => {
+        expect(validateOperationPage([], {
+            maxOpsPerPush: 1,
+            maxBytesPerPush: 1,
+        })).toStrictEqual({
+            ok: false,
+            reason: 'operation page exceeds 1 bytes',
         });
     });
 
@@ -227,12 +237,16 @@ describe('negentropy transfer batching helpers', () => {
         }
     });
 
-    it('validates, normalizes, and deduplicates ID lists after admission', () => {
+    it('requires canonical lowercase IDs and deduplicates after admission', () => {
         const upper = h('A');
         const lower = h('a');
         const other = h('b');
 
         expect(validateIdList([upper, lower, other], 3)).toStrictEqual({
+            ok: false,
+            reason: 'ID at index 0 must be 64 hexadecimal characters',
+        });
+        expect(validateIdList([lower, lower, other], 3)).toStrictEqual({
             ok: true,
             value: [lower, other],
         });

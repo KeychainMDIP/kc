@@ -48,7 +48,7 @@ function createQueueCoordinator(
             if (!page.ok) {
                 throw new Error(page.reason);
             }
-            return coordinator.handleMessage(peerKey, message, connection, page.value);
+            return coordinator.handleMessage(peerKey, connection, page.value);
         },
     };
 }
@@ -108,10 +108,10 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' as const }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         await coordinator.handleMessage('peer', message, connection);
         await coordinator.handleMessage('peer', message, connection);
@@ -133,10 +133,10 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         const handling = coordinator.handleMessage('peer', message, connection);
         await Promise.resolve();
@@ -163,7 +163,7 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue: async () => [operation], clearQueue },
             cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
             syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
-            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue' }), relay,
             onProtocolViolation: jest.fn(),
         });
         await coordinator.flush();
@@ -188,13 +188,13 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue, clearQueue },
             cipher,
             syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
-            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue' }), relay,
             onProtocolViolation,
         });
-        const message = { type: 'queue' as const, time: '', node: '', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
         const malformed = {
             ...message,
-            data: [{
+            operations: [{
                 ...operation,
                 signature: { ...operation.signature!, hash: 'f'.repeat(64) },
             }],
@@ -232,7 +232,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -262,7 +262,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -292,7 +292,7 @@ describe('queue coordinator', () => {
                 enqueue: jest.fn(async () => importResult()),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -332,23 +332,20 @@ describe('queue coordinator', () => {
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
             createQueueMessage: () => ({
-                type: 'queue', time: '', node: 'local', relays: [],
+                type: 'queue',
             }),
             relay,
             onProtocolViolation: jest.fn(),
         });
         const message = {
             type: 'queue' as const,
-            time: '',
-            node: 'peer',
-            relays: [],
-            data: [operations[0], operations[0], operations[1]],
+            operations: [operations[0], operations[0], operations[1]],
         };
 
         await coordinator.handleMessage('peer-key', message, connection);
         await coordinator.handleMessage('peer-key', {
             ...message,
-            data: [...operations].reverse(),
+            operations: [...operations].reverse(),
         }, connection);
         expect(enqueue).toHaveBeenCalledTimes(1);
         expect(enqueue.mock.calls[0][0].data).toEqual(operations);
@@ -379,7 +376,7 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -388,10 +385,7 @@ describe('queue coordinator', () => {
         expect(enqueue).toHaveBeenCalledTimes(2);
         await coordinator.handleMessage('peer-key', {
             type: 'queue',
-            time: '',
-            node: 'peer',
-            relays: [],
-            data: [...operations].reverse(),
+            operations: [...operations].reverse(),
         }, connection);
 
         expect(enqueue).toHaveBeenCalledTimes(2);
@@ -420,7 +414,7 @@ describe('queue coordinator', () => {
             syncStats,
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -452,12 +446,12 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message: QueueMessage = {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         };
 
         await coordinator.handleMessage('peer-key', message, connection);
@@ -491,12 +485,12 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message: QueueMessage = {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         };
 
         const admitted = coordinator.handleMessage('peer-key', message, connection);
@@ -544,12 +538,12 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: operations };
-        const reordered = { ...message, data: [...operations].reverse() };
+        const message = { type: 'queue' as const, operations: operations };
+        const reordered = { ...message, operations: [...operations].reverse() };
 
         await coordinator.handleMessage('peer-key', message, connection);
         expect(relay).not.toHaveBeenCalled();
@@ -591,25 +585,25 @@ describe('queue coordinator', () => {
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: 'local-time', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
 
         await coordinator.handleMessage('peer-key', {
-            type: 'queue', time: 'untrusted-time', node: 'untrusted-node', relays: [],
-            data: [pending],
+            type: 'queue',
+            operations: [pending],
         }, connection);
 
         expect(relay).toHaveBeenCalledTimes(2);
         expect(relay.mock.calls.map(([message]) => message)).toEqual([
             {
-                type: 'queue', time: 'local-time', node: 'local', relays: ['peer-key'],
-                data: [accepted.operation],
+                type: 'queue',
+                operations: [accepted.operation],
             },
             {
-                type: 'queue', time: 'local-time', node: 'local', relays: ['peer-key'],
-                data: [terminal],
+                type: 'queue',
+                operations: [terminal],
             },
         ]);
     });
@@ -633,10 +627,10 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay, onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         await coordinator.handleMessage('peer-key', message, connection);
         await coordinator.handleMessage('peer-key', message, connection);
@@ -685,12 +679,12 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
         const message: QueueMessage = {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [first.operation],
+            type: 'queue', operations: [first.operation],
         };
 
         await expect(coordinator.handleMessage('peer-key', message, connection)).resolves.toBeUndefined();
@@ -726,11 +720,11 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         await coordinator.handleMessage('peer-key', message, connection);
         await coordinator.handleMessage('peer-key', message, connection);
@@ -768,16 +762,13 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation,
         });
         const message = {
             type: 'queue' as const,
-            time: '',
-            node: 'peer',
-            relays: [],
-            data: [operation],
+            operations: [operation],
         };
 
         await coordinator.handleMessage('peer-key', message, connection);
@@ -822,12 +813,12 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         const firstWork = coordinator.handleMessage('first-peer', message(first.operation), connection);
@@ -888,12 +879,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation,
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         const firstWork = coordinator.handleMessage(
@@ -958,12 +949,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('peer-key', message(first.operation), connection);
@@ -1009,12 +1000,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('first-peer', message(first.operation), connections.get('first-peer')!);
@@ -1065,12 +1056,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: operations };
-        const reordered = { ...message, data: [...operations].reverse() };
+        const message = { type: 'queue' as const, operations: operations };
+        const reordered = { ...message, operations: [...operations].reverse() };
 
         const originalWork = coordinator.handleMessage('original-peer', message, original);
         await coordinator.handleMessage('disconnected-peer', reordered, disconnectedAlternative);
@@ -1109,12 +1100,12 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('peer', message(first.operation), connection);
@@ -1159,12 +1150,12 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('peer', message(retry.operation), connection);
@@ -1208,12 +1199,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('first-peer', message(first.operation), firstConnection);
@@ -1259,12 +1250,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         await coordinator.handleMessage('peer-key', message(first.operation), connection);
@@ -1318,19 +1309,19 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
 
         await coordinator.handleMessage('first-peer', {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [first.operation],
+            type: 'queue', operations: [first.operation],
         }, firstConnection);
         const firstRepair = coordinator.runRepairs();
         await Promise.resolve();
         const held = operationPages.reserve(1)!;
         await coordinator.handleMessage('second-peer', {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [second],
+            type: 'queue', operations: [second],
         }, secondConnection);
         finishRepair(true);
         await firstRepair;
@@ -1370,12 +1361,12 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = {
-            type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue' as const, operations: [operation],
         };
 
         await coordinator.handleMessage('peer-key', message, connection);
@@ -1417,11 +1408,11 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         const work = coordinator.handleMessage('peer-key', message, original);
         connections.set('peer-key', replacement);
@@ -1455,11 +1446,11 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => undefined,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         await coordinator.handleMessage('peer-key', message, connection);
         await coordinator.handleMessage('peer-key', message, connection);
@@ -1495,13 +1486,13 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
 
         await coordinator.handleMessage('peer-key', {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         }, connection);
         await expect(coordinator.runRepairs()).resolves.toBeUndefined();
         await expect(coordinator.runRepairs()).resolves.toBeUndefined();
@@ -1536,11 +1527,11 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
-        const message = { type: 'queue' as const, time: '', node: 'peer', relays: [], data: [operation] };
+        const message = { type: 'queue' as const, operations: [operation] };
 
         await coordinator.handleMessage('peer-key', message, original);
         coordinator.handleDisconnected('peer-key', 'connection_replaced', original);
@@ -1579,12 +1570,12 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
         const message = (operation: Operation): QueueMessage => ({
-            type: 'queue', time: '', node: 'peer', relays: [], data: [operation],
+            type: 'queue', operations: [operation],
         });
 
         const active = coordinator.handleMessage('peer', message(first.operation), connection);
@@ -1621,15 +1612,15 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         })).toThrow('maxRecentOutcomes must be a positive safe integer');
     });
 
-    it('replaces untrusted relay hints with the immediate sender', async () => {
+    it('excludes the immediate sender when relaying admitted gossip', async () => {
         const { cipher, operation } = makeOperation();
-        const relay = jest.fn(async (_message: QueueMessage) => undefined);
+        const relay = jest.fn(async (_message: QueueMessage, _excludedPeerKey?: string) => undefined);
         const coordinator = createQueueCoordinator({
             registry: 'hyperswarm',
             maxOpsPerPage: 300,
@@ -1651,19 +1642,20 @@ describe('queue coordinator', () => {
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
-        const relays = Array.from({ length: 64 }, (_, index) => index.toString(16).padStart(64, '0'));
         const peerKey = 'f'.repeat(64);
 
         await coordinator.handleMessage(peerKey, {
-            type: 'queue', time: '', node: 'peer', relays, data: [operation],
+            type: 'queue', operations: [operation],
         }, connection);
 
-        const forwarded = relay.mock.calls[0][0];
-        expect(forwarded.relays).toEqual([peerKey]);
+        expect(relay).toHaveBeenCalledWith(expect.objectContaining({
+            type: 'queue',
+            operations: [operation],
+        }), peerKey);
     });
 
     it('rejects forged gossip and delays retry after an import failure', async () => {
@@ -1693,17 +1685,17 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation,
         });
         const message = {
-            type: 'queue', time: '', node: 'peer', data: [operation],
+            type: 'queue', operations: [operation],
         } as QueueMessage;
 
         await expect(coordinator.handleMessage('peer-key', {
             ...message,
-            data: [{
+            operations: [{
                 ...operation,
                 signature: { ...operation.signature!, hash: 'f'.repeat(64) },
             }],
@@ -1715,7 +1707,7 @@ describe('queue coordinator', () => {
         await expect(coordinator.handleMessage('peer-key', message, connection)).resolves.toBeUndefined();
         expect(enqueue).toHaveBeenCalledTimes(2);
         expect(onProtocolViolation).toHaveBeenCalledTimes(1);
-        expect(relay).toHaveBeenCalledWith(expect.objectContaining({ relays: ['peer-key'] }));
+        expect(relay).toHaveBeenCalledWith(expect.objectContaining({ operations: [operation] }), 'peer-key');
     });
 
     it('retains a local queue when merging reports backpressure', async () => {
@@ -1744,7 +1736,7 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1772,7 +1764,7 @@ describe('queue coordinator', () => {
             gatekeeper,
             cipher, syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
 
@@ -1798,7 +1790,7 @@ describe('queue coordinator', () => {
             cipher: new CipherNode(), syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true } as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' as const, time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' as const }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         };
         const disconnected = createQueueCoordinator({ ...base, getConnection, requestRepair });
@@ -1838,7 +1830,7 @@ describe('queue coordinator', () => {
                 enqueue: jest.fn(async () => importResult({ retryable: true })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1867,7 +1859,7 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ available: true, enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1920,7 +1912,7 @@ describe('queue coordinator', () => {
                 enqueue,
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: 'local', relays: [] }),
+            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -1930,7 +1922,7 @@ describe('queue coordinator', () => {
         await coordinator.flush();
 
         expect(relay).toHaveBeenCalledTimes(2);
-        expect(relay.mock.calls.map(([message]) => message.data)).toEqual([
+        expect(relay.mock.calls.map(([message]) => message.operations)).toEqual([
             [first.operation],
             [second],
         ]);
@@ -1945,7 +1937,7 @@ describe('queue coordinator', () => {
         ]);
 
         await coordinator.handleMessage('peer', {
-            type: 'queue', time: '', node: 'peer', relays: [], data: [first.operation],
+            type: 'queue', operations: [first.operation],
         }, connection);
         expect(enqueue).toHaveBeenCalledTimes(4);
     });

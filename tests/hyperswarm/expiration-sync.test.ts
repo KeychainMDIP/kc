@@ -45,7 +45,7 @@ describe('expiration and historical synchronization', () => {
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
             getConnection: () => undefined,
             requestRepair: async () => false,
-            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+            createQueueMessage: () => ({ type: 'queue' }), relay,
             onProtocolViolation: jest.fn(),
         });
         try {
@@ -62,14 +62,14 @@ describe('expiration and historical synchronization', () => {
             await expect(coordinator.flush()).resolves.toBeUndefined();
             expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
             expect(await store.has(asset.signature!.hash)).toBe(true);
-            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [asset] }));
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ operations: [asset] }));
 
             const subsequent = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
             await gatekeeper.createDID(subsequent);
             await expect(coordinator.flush()).resolves.toBeUndefined();
             expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
             expect(relay).toHaveBeenCalledTimes(3);
-            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [subsequent] }));
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ operations: [subsequent] }));
         } finally {
             await pipeline.shutdown();
         }

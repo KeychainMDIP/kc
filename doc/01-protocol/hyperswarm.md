@@ -6,8 +6,11 @@ explicit transfer of operations; Gatekeeper remains authoritative for operation
 validity.
 
 All participating mediators must use the same MDIP Hyperswarm wire version. The
-current version intentionally has no compatibility fallback for older message
-shapes.
+current version is `2`, advertised as the required `version` field on the
+initial `ping`. It intentionally has no compatibility fallback for older
+message shapes. The common message envelope contains only `type`; display name,
+peer discovery DIDs, latest signed timestamp and ordered catch-up capability are
+optional ping fields.
 
 ## Native Negentropy layer
 

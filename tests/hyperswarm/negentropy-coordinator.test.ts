@@ -36,8 +36,8 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const store = new InMemoryOperationSyncStore();
         await store.start();
         const cipher = new CipherNode();
@@ -103,7 +103,7 @@ describe('Negentropy coordinator', () => {
         const onProtocolViolation = jest.fn();
         const terminatePeerConnection = jest.fn();
         const coordinator = createNegentropyCoordinator({
-            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            wireVersion: 2, frameSizeLimit: 0,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -111,7 +111,7 @@ describe('Negentropy coordinator', () => {
             bulkReads: createBulkWorkScheduler(2), operationPages,
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => `local-${nextSession++}`,
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation, onSessionClosed, onIndexRefreshed: async () => {},
@@ -151,7 +151,7 @@ describe('Negentropy coordinator', () => {
             const before = sent.length;
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             const request = sent.slice(before).find(message => message.type === 'ops_req');
             expect(request).toBeDefined();
@@ -161,7 +161,6 @@ describe('Negentropy coordinator', () => {
         try {
             const unknownSession = {
                 sessionId: 'unknown', windowId: 'unknown-window', round: 0,
-                time: '', node: '', relays: [],
             };
             for (const message of [
                 { ...unknownSession, type: 'neg_msg', frame: { encoding: 'base64', data: '' } },
@@ -187,19 +186,18 @@ describe('Negentropy coordinator', () => {
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
 
             coordinator.setAdapter(adapter as never);
-            connection.peerTransportFramingVersion = 0;
+            connection.wireVersion = 1;
             await coordinator.handleMessage(peerKey, {
                 ...guardOpen, sessionId: 'remote-incompatible', round: 0,
             });
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
-            connection.peerTransportFramingVersion = 1;
+            connection.wireVersion = 2;
 
             const authorizationOpen = await startLocal();
             const activeTransfer = {
                 sessionId: authorizationOpen.sessionId,
                 windowId: authorizationOpen.windowId,
                 round: 0,
-                time: '', node: '', relays: [],
             };
             for (const message of [
                 {
@@ -250,7 +248,7 @@ describe('Negentropy coordinator', () => {
                     type: 'neg_msg', sessionId: cappedOpen.sessionId,
                     windowId: currentOpen?.type === 'neg_open' ? currentOpen.windowId : '',
                     round: coordinator.getExpectedInboundRound(peerKey, 'neg_msg'),
-                    frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                    frame: { encoding: 'base64', data: '' },
                 });
             }
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
@@ -263,7 +261,7 @@ describe('Negentropy coordinator', () => {
             failedType = 'neg_msg';
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_msg_failed');
 
@@ -272,7 +270,7 @@ describe('Negentropy coordinator', () => {
             outcomes.push({ nextMsg: null, haveIds: [], needIds: [] });
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
 
@@ -285,7 +283,7 @@ describe('Negentropy coordinator', () => {
             onSessionClosed.mockClear();
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
             importPipeline.filterRetryDelayedIds = filterRetryDelayedIds;
@@ -315,7 +313,7 @@ describe('Negentropy coordinator', () => {
             );
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_ack', sessionId: 'remote-reopen', windowId: open.windowId,
-                round: 0, requestId: 0, page: 0, time: '', node: '', relays: [],
+                round: 0, requestId: 0, page: 0,
             });
             coordinator.reset();
             await coordinator.handleMessage(peerKey, {
@@ -335,7 +333,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-offer-send-failure', windowId: open.windowId,
                 round: remote.round!, offerId: 0, ids: ['e'.repeat(64)],
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_req_failed');
             failedType = null;
@@ -352,7 +349,7 @@ describe('Negentropy coordinator', () => {
             failedType = 'ops_req';
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_req_failed');
 
@@ -362,7 +359,7 @@ describe('Negentropy coordinator', () => {
             failedType = 'ops_offer';
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_offer_failed');
 
@@ -372,13 +369,13 @@ describe('Negentropy coordinator', () => {
             const offerStart = sent.length;
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             const offer = sent.slice(offerStart).find(message => message.type === 'ops_offer');
             expect(offer?.type).toBe('ops_offer');
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                requestId: 0, offerId: 99, ids: [], time: '', node: '', relays: [],
+                requestId: 0, offerId: 99, ids: [],
             });
             expect(onProtocolViolation).toHaveBeenLastCalledWith(
                 peerKey,
@@ -388,7 +385,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, round: 1,
                 requestId: 0, offerId: offer?.type === 'ops_offer' ? offer.offerId : 0,
-                ids: [], deferred: true, time: '', node: '', relays: [],
+                ids: [], deferred: true,
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             onProtocolViolation.mockClear();
@@ -400,7 +397,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-capacity', windowId: open.windowId,
                 round: remote.round!, requestId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             });
             held.release();
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_output_capacity');
@@ -412,7 +408,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-send', windowId: open.windowId,
                 round: remote.round!, requestId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_push_failed');
 
@@ -425,7 +420,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-offer-lookup', windowId: open.windowId,
                 round: remote.round!, offerId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_offer_lookup_failed');
             mockLogger.warn.mockClear();
@@ -442,7 +436,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-corrupt-record', windowId: open.windowId,
                 round: remote.round!, requestId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_lookup_failed');
             mockLogger.warn.mockClear();
@@ -458,7 +451,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-mismatched-record', windowId: open.windowId,
                 round: remote.round!, requestId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_lookup_failed');
             mockLogger.warn.mockClear();
@@ -474,7 +466,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-cancelled-offer', windowId: open.windowId,
                 round: remote.round!, offerId: 0, ids: ['d'.repeat(64)],
-                time: '', node: '', relays: [],
             });
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
             expect(sent.slice(cancelledOfferStart)).not.toContainEqual(expect.objectContaining({ type: 'ops_req' }));
@@ -487,7 +478,6 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_req' as const,
                 sessionId: 'remote-ack', windowId: open.windowId,
                 round: remote.round!, requestId: 0, ids: [operation.signature.hash],
-                time: '', node: '', relays: [],
             };
             await coordinator.handleMessage(peerKey, directRequest);
             await coordinator.handleMessage(peerKey, directRequest);
@@ -501,7 +491,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_ack', sessionId: 'remote-ack', windowId: open.windowId,
                 round: remote.round!, requestId: 1, page: 0,
-                time: '', node: '', relays: [],
             });
             expect(onProtocolViolation).toHaveBeenLastCalledWith(
                 peerKey,
@@ -512,7 +501,6 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_ack', sessionId: 'remote-ack', windowId: open.windowId,
                 round: remote.round!, requestId: pushed?.type === 'ops_push' ? pushed.requestId : 0,
                 page: pushed?.type === 'ops_push' ? pushed.page : 0,
-                time: '', node: '', relays: [],
             });
             expect(coordinator.hasActiveSession(peerKey)).toBe(true);
             coordinator.reset();
@@ -546,7 +534,6 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_req', sessionId: 'remote-page-lookup', windowId: open.windowId,
                 round: remote.round!, requestId: 0,
                 ids: largeOperations.map(item => item.signature.hash),
-                time: '', node: '', relays: [],
             });
             const firstLargePage = sent.slice(pagedPushStart).find(message => message.type === 'ops_push');
             expect(firstLargePage).toMatchObject({ type: 'ops_push', page: 0, hasMore: true });
@@ -554,7 +541,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_ack', sessionId: 'remote-page-lookup', windowId: open.windowId,
                 round: remote.round!, requestId: 0, page: 0,
-                time: '', node: '', relays: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_lookup_failed');
             mockLogger.warn.mockClear();
@@ -568,7 +554,6 @@ describe('Negentropy coordinator', () => {
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
                 page: 0,
                 hasMore: false,
-                time: '', node: '', relays: [],
             };
             const forged = { ...operation, mdip: { ...operation.mdip, registry: 'local' } };
             await coordinator.handleMessage(peerKey, { ...pushMessage, data: [forged] });
@@ -605,7 +590,6 @@ describe('Negentropy coordinator', () => {
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
                 page: 0, hasMore: false, data: [terminalOperation],
-                time: '', node: '', relays: [],
             });
             expect(importPipeline.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
                 kind: 'terminal', data: [terminalOperation],
@@ -623,7 +607,6 @@ describe('Negentropy coordinator', () => {
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
                 page: 0, hasMore: false, data: [terminalOperation],
-                time: '', node: '', relays: [],
             });
             expect(mockLogger.warn).toHaveBeenCalledWith(
                 expect.objectContaining({ error: expect.any(Error), unresolved: 1 }),
@@ -644,7 +627,6 @@ describe('Negentropy coordinator', () => {
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
                 page: 0, hasMore: false, data: [terminalOperation],
-                time: '', node: '', relays: [],
             });
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
             expect(importPipeline.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -658,7 +640,6 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-unresolved-complete', windowId: open.windowId,
                 round: remote.round!, offerId: 0, ids: [terminalOperation.signature.hash],
-                time: '', node: '', relays: [],
             });
             const unresolvedRequest = sent.slice(unresolvedOfferStart)
                 .find(message => message.type === 'ops_req');
@@ -671,12 +652,11 @@ describe('Negentropy coordinator', () => {
                 round: remote.round!,
                 requestId: unresolvedRequest?.type === 'ops_req' ? unresolvedRequest.requestId : 0,
                 page: 0, hasMore: false, data: [terminalOperation],
-                time: '', node: '', relays: [],
             });
             terminatePeerConnection.mockClear();
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_close', sessionId: 'remote-unresolved-complete', windowId: open.windowId,
-                round: remote.round!, reason: 'complete', time: '', node: '', relays: [],
+                round: remote.round!, reason: 'complete',
             });
             expect(terminatePeerConnection).toHaveBeenCalledWith(peerKey, 'unresolved_operations');
 
@@ -692,13 +672,12 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-incomplete-close', windowId: open.windowId,
                 round: remote.round!, offerId: 0, ids: ['c'.repeat(64)],
-                time: '', node: '', relays: [],
             });
             failedType = 'neg_close';
             onSessionClosed.mockClear();
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_close', sessionId: 'remote-incomplete-close', windowId: open.windowId,
-                round: remote.round!, reason: 'complete', time: '', node: '', relays: [],
+                round: remote.round!, reason: 'complete',
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
             importPipeline.filterRetryDelayedIds = originalFilterRetryDelayedIds;
@@ -744,7 +723,7 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_push', sessionId: requested.request.sessionId!,
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
-                page: 0, hasMore: false, data: [operation], time: '', node: '', relays: [],
+                page: 0, hasMore: false, data: [operation],
             });
             inboundHeld.release();
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'ops_push_import_capacity');
@@ -755,7 +734,7 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_push', sessionId: requested.request.sessionId!,
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
-                page: 0, hasMore: false, data: [], time: '', node: '', relays: [],
+                page: 0, hasMore: false, data: [],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_neg_close_failed');
 
@@ -766,7 +745,7 @@ describe('Negentropy coordinator', () => {
                 type: 'ops_push', sessionId: requested.request.sessionId!,
                 windowId: requested.request.windowId!, round: requested.request.round!,
                 requestId: requested.request.type === 'ops_req' ? requested.request.requestId : 0,
-                page: 0, hasMore: false, data: [operation], time: '', node: '', relays: [],
+                page: 0, hasMore: false, data: [operation],
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'send_ops_ack_failed');
             expect(coordinator.getActiveSessionCount()).toBe(0);
@@ -780,7 +759,7 @@ describe('Negentropy coordinator', () => {
             });
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'negentropy_outcome_exceeds_window');
 
@@ -794,12 +773,12 @@ describe('Negentropy coordinator', () => {
             });
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             failedType = 'neg_close';
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_close', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                reason: 'max_rounds_reached', time: '', node: '', relays: [],
+                reason: 'max_rounds_reached',
             });
             expect(sendToPeer).toHaveBeenLastCalledWith(
                 peerKey,
@@ -817,13 +796,13 @@ describe('Negentropy coordinator', () => {
                 });
                 await coordinator.handleMessage(peerKey, {
                     type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round,
-                    frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                    frame: { encoding: 'base64', data: '' },
                 });
             }
             failedType = 'neg_close';
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 9,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             expect(sendToPeer).toHaveBeenLastCalledWith(
                 peerKey,
@@ -856,7 +835,7 @@ describe('Negentropy coordinator', () => {
             const unresolvedRequestStart = sent.length;
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             const unresolvedBudgetRequest = sent.slice(unresolvedRequestStart)
                 .find(message => message.type === 'ops_req');
@@ -874,7 +853,7 @@ describe('Negentropy coordinator', () => {
                         ? unresolvedBudgetRequest.requestId
                         : 0,
                     page, hasMore: page < unresolvedOperations.length - 1,
-                    data: [unresolvedOperation], time: '', node: '', relays: [],
+                    data: [unresolvedOperation],
                 });
             }
             expect(sendToPeer).toHaveBeenLastCalledWith(
@@ -895,7 +874,7 @@ describe('Negentropy coordinator', () => {
             coordinator.setAdapter(null);
             await expect(coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             })).rejects.toThrow('negentropy adapter unavailable');
             coordinator.reset();
             coordinator.setAdapter(adapter as never);
@@ -908,7 +887,7 @@ describe('Negentropy coordinator', () => {
             })).resolves.toBe(false);
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_close', sessionId: 'closed', windowId: 'closed', round: 0,
-                reason: 'complete', time: '', node: '', relays: [],
+                reason: 'complete',
             });
             await coordinator.handleIndexRefreshed('closed', {
                 mode: 'changes', inserted: 1, updated: 0, deleted: 0,
@@ -946,8 +925,8 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const store = new InMemoryOperationSyncStore();
         await store.start();
         const importPipeline = {
@@ -981,7 +960,7 @@ describe('Negentropy coordinator', () => {
         };
         const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
         const coordinator = createNegentropyCoordinator({
-            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            wireVersion: 2, frameSizeLimit: 0,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -990,7 +969,7 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'local-session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection: () => undefined,
             onProtocolViolation: jest.fn(), onSessionClosed: async () => {}, onIndexRefreshed: async () => {},
@@ -1005,7 +984,7 @@ describe('Negentropy coordinator', () => {
                 & { sessionId: string; windowId: string };
             await coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId, round: 1,
-                frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                frame: { encoding: 'base64', data: '' },
             });
             return open;
         }
@@ -1034,7 +1013,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-mixed',
                 windowId: (localOpen as { windowId: string }).windowId, round: 1, offerId: 0,
-                ids: [eligibleId, pendingId, capacityId], time: '', node: '', relays: [],
+                ids: [eligibleId, pendingId, capacityId],
             });
             expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({
                 type: 'ops_req', offerId: 0, ids: [eligibleId, pendingId], deferred: true,
@@ -1047,7 +1026,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-delayed',
                 windowId: (localOpen as { windowId: string }).windowId, round: 1, offerId: 0,
-                ids: [capacityId], time: '', node: '', relays: [],
+                ids: [capacityId],
             });
             expect(sendToPeer.mock.calls.at(-1)?.[1]).toMatchObject({
                 type: 'ops_req', offerId: 0, ids: [], deferred: true,
@@ -1075,8 +1054,8 @@ describe('Negentropy coordinator', () => {
                 connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
                 peerName: peerKey,
             });
-            conn.capabilities = normalizePeerCapabilities({ negentropyVersion: 1 });
-            conn.peerTransportFramingVersion = 1;
+            conn.capabilities = normalizePeerCapabilities();
+            conn.wireVersion = 2;
             conn.initialPingReceived = true;
             conn.syncStarted = true;
             conn.negentropySynced = true;
@@ -1087,7 +1066,7 @@ describe('Negentropy coordinator', () => {
         const startSession = jest.fn(async (peerKey: string) => { activePeer = peerKey; return true; });
         const reset = jest.fn(() => { activePeer = null; });
         const coordinator = createPeerSyncCoordinator({
-            negentropyVersion: 1, orderedCatchupVersion: 1, transportFramingVersion: 1,
+            wireVersion: 2,
             windowSize: 25_000, repairIntervalMs: 300_000, syncStats: createMediatorSyncStats(),
             getNodeKey: () => 'ff'.repeat(32), getPeerKeys: () => [...connections.keys()],
             getConnection: key => connections.get(key),
@@ -1144,8 +1123,8 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const store = new InMemoryOperationSyncStore();
         const cipher = new CipherNode();
         const unsigned = {
@@ -1181,7 +1160,7 @@ describe('Negentropy coordinator', () => {
         const onSessionClosed = jest.fn(async () => {});
         const terminatePeerConnection = jest.fn();
         const coordinator = createNegentropyCoordinator({
-            version: 2, transportFramingVersion: 1, frameSizeLimit: 0, maxRecordsPerWindow: 16,
+            wireVersion: 2, frameSizeLimit: 0, maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8, maxIdsPerRequest: 1_000, maxIdsPerLookup: 1_000,
             maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024, idleTimeoutMs: 120_000,
             repairIntervalMs: 60_000,
@@ -1189,7 +1168,7 @@ describe('Negentropy coordinator', () => {
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => connection,
-            createSessionId: () => 'session', createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            createSessionId: () => 'session', createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed, onIndexRefreshed,
@@ -1207,15 +1186,13 @@ describe('Negentropy coordinator', () => {
             onSessionClosed.mockClear();
             const round = (sendToPeer.mock.calls.at(-1)?.[1] as { round: number }).round;
             await coordinator.handleMessage(peerKey, {
-                type: 'ops_offer', sessionId, windowId: open.windowId, round, offerId: 0,
-                time: '', node: '', relays: [], ids: [operation.signature.hash],
+                type: 'ops_offer', sessionId, windowId: open.windowId, round, offerId: 0, ids: [operation.signature.hash],
             });
             const request = sendToPeer.mock.calls.at(-1)?.[1] as { requestId: number };
             mockLogger.error.mockClear();
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_push', sessionId, windowId: open.windowId, round,
-                requestId: request.requestId, page: 0, hasMore: false,
-                time: '', node: '', relays: [], data: [operation],
+                requestId: request.requestId, page: 0, hasMore: false, data: [operation],
             });
             if (outcome === 'accepted') {
                 expect(onIndexRefreshed).toHaveBeenCalledWith('negentropy_processing_recovery', expect.objectContaining({ inserted: 1 }));
@@ -1275,8 +1252,8 @@ describe('Negentropy coordinator', () => {
             connection: { write() {}, destroy() {}, remotePublicKey: Buffer.from(peerKey, 'hex') } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const store = new InMemoryOperationSyncStore();
         let releaseImport!: () => void;
         const held = new Promise<void>(resolve => { releaseImport = resolve; });
@@ -1308,7 +1285,7 @@ describe('Negentropy coordinator', () => {
             hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
         } };
         const coordinator = createNegentropyCoordinator({
-            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            wireVersion: 2, frameSizeLimit: 0,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
@@ -1317,7 +1294,7 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'reset-session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed,
@@ -1335,15 +1312,13 @@ describe('Negentropy coordinator', () => {
             } as never);
             const round = (sendToPeer.mock.calls.at(-1)?.[1] as { round: number }).round;
             await coordinator.handleMessage(peerKey, {
-                type: 'ops_offer', sessionId, windowId: open.windowId, round, offerId: 0,
-                time: '', node: '', relays: [], ids: [operation.signature.hash],
+                type: 'ops_offer', sessionId, windowId: open.windowId, round, offerId: 0, ids: [operation.signature.hash],
             });
             const request = sendToPeer.mock.calls.at(-1)?.[1] as { requestId: number };
             mockLogger.warn.mockClear();
             const push = coordinator.handleMessage(peerKey, {
                 type: 'ops_push', sessionId, windowId: open.windowId, round,
                 requestId: request.requestId, page: 0, hasMore: false,
-                time: '', node: '', relays: [],
                 data: [operation],
             });
             if (phase === 'remote') {
@@ -1355,7 +1330,7 @@ describe('Negentropy coordinator', () => {
                 expect(coordinator.hasActiveSession(peerKey)).toBe(true);
                 await coordinator.handleMessage(peerKey, {
                     type: 'neg_close', sessionId, windowId: open.windowId,
-                    reason: 'complete', round, time: '', node: '', relays: [],
+                    reason: 'complete', round,
                 });
                 expect(coordinator.hasActiveSession(peerKey)).toBe(true);
                 releaseImport();
@@ -1364,7 +1339,7 @@ describe('Negentropy coordinator', () => {
             if (phase === 'terminal') {
                 await coordinator.handleMessage(peerKey, {
                     type: 'neg_close', sessionId, windowId: open.windowId,
-                    reason: 'complete', round, time: '', node: '', relays: [],
+                    reason: 'complete', round,
                 });
             }
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
@@ -1433,8 +1408,7 @@ describe('Negentropy coordinator', () => {
         const bulkReads = createBulkWorkScheduler(2);
         const cancelBulkReads = jest.spyOn(bulkReads, 'cancel');
         const coordinator = createNegentropyCoordinator({
-            version: 2,
-            transportFramingVersion: 1,
+            wireVersion: 2,
             frameSizeLimit: 0,
             maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8,
@@ -1452,12 +1426,7 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({
-                type,
-                time: new Date().toISOString(),
-                node: 'test-node',
-                relays: [],
-            }),
+            createBaseMessage: type => ({ type }),
             sendToPeer: () => true,
             sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => true,
@@ -1548,8 +1517,8 @@ describe('Negentropy coordinator', () => {
             } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({ negentropyVersion: 2 });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const importPipeline = {
             available: true, recovering: false, queued: 0, running: 0, indexEpoch: 'epoch',
         } as unknown as ImportPipeline;
@@ -1557,7 +1526,7 @@ describe('Negentropy coordinator', () => {
         const terminatePeerConnection = jest.fn();
         const onSessionClosed = jest.fn(async () => undefined);
         coordinator = createNegentropyCoordinator({
-            version: 2, transportFramingVersion: 1, frameSizeLimit: 0,
+            wireVersion: 2, frameSizeLimit: 0,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -1566,7 +1535,7 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => connection,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: () => undefined, onSessionClosed, onIndexRefreshed: async () => {},
@@ -1581,7 +1550,7 @@ describe('Negentropy coordinator', () => {
 
             await expect(coordinator.handleMessage(peerKey, {
                 type: 'neg_msg', sessionId: 'test-session', windowId: open.windowId,
-                round: 1, frame: { encoding: 'base64', data: '' }, time: '', node: '', relays: [],
+                round: 1, frame: { encoding: 'base64', data: '' },
             })).resolves.toBeUndefined();
 
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
@@ -1679,10 +1648,8 @@ describe('Negentropy coordinator', () => {
             } as never,
             peerName: 'test-peer',
         });
-        connection.capabilities = normalizePeerCapabilities({
-            negentropyVersion: 2,
-        });
-        connection.peerTransportFramingVersion = 1;
+        connection.capabilities = normalizePeerCapabilities();
+        connection.wireVersion = 2;
         const importPipeline: ImportPipeline = {
             available: true, recovering: false,
             getMetrics: () => ({ activeRetryDelayedIds: 0, persistenceRetries: 0 }),
@@ -1704,8 +1671,7 @@ describe('Negentropy coordinator', () => {
         };
         const sendToPeer = jest.fn(() => true);
         const coordinator = createNegentropyCoordinator({
-            version: 2,
-            transportFramingVersion: 1,
+            wireVersion: 2,
             frameSizeLimit: 0,
             maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8,
@@ -1723,12 +1689,7 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({
-                type,
-                time: new Date().toISOString(),
-                node: 'test-node',
-                relays: [],
-            }),
+            createBaseMessage: type => ({ type }),
             sendToPeer,
             sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false,
@@ -1856,9 +1817,6 @@ describe('Negentropy coordinator', () => {
                 window: remoteWindow,
                 round: 0,
                 frame: { encoding: 'base64', data: '' },
-                time: '',
-                node: '',
-                relays: [],
             })).rejects.toBe(buildFailure);
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
             expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({

@@ -14,10 +14,8 @@ describe('peer sync coordinator targeted repair', () => {
     function createHarness() {
         const peerKey = 'b'.repeat(64);
         const connection = {
-            capabilities: normalizePeerCapabilities({
-                negentropyVersion: 2,
-            }),
-            peerTransportFramingVersion: 1,
+            capabilities: normalizePeerCapabilities(),
+            wireVersion: 2,
             initialPingSent: true,
             initialPingReceived: true,
             negentropySynced: true,
@@ -40,9 +38,7 @@ describe('peer sync coordinator targeted repair', () => {
         let current: ConnectionInfo | undefined = connection;
         const syncStats = createMediatorSyncStats();
         const coordinator = createPeerSyncCoordinator({
-            negentropyVersion: 2,
-            orderedCatchupVersion: 1,
-            transportFramingVersion: 1,
+            wireVersion: 2,
             windowSize: 25_000,
             repairIntervalMs: 1_000,
             syncStats,
@@ -76,13 +72,12 @@ describe('peer sync coordinator targeted repair', () => {
     }
 
     it.each([
-        { capabilities: normalizePeerCapabilities(), framing: 1 },
-        { capabilities: normalizePeerCapabilities({ negentropyVersion: 1 }), framing: 1 },
-        { capabilities: normalizePeerCapabilities({ negentropyVersion: 2 }), framing: 0 },
-    ])('rejects repair for an incompatible asynchronous handoff', async ({ capabilities, framing }) => {
+        null,
+        1,
+        3,
+    ])('rejects repair for wire version %s', async wireVersion => {
         const harness = createHarness();
-        harness.connection.capabilities = capabilities;
-        harness.connection.peerTransportFramingVersion = framing;
+        harness.connection.wireVersion = wireVersion;
 
         await expect(harness.coordinator.requestRepair(
             harness.peerKey,

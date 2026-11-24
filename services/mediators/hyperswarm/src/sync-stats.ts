@@ -33,8 +33,7 @@ export interface MediatorSyncStats {
     bytesReceived: number;
     protocolViolationCooldowns: number;
     protocolViolationConnectionsRejected: number;
-    transportFramingIncompatibilityClosures: number;
-    negentropyVersionIncompatibilityClosures: number;
+    wireVersionIncompatibilityClosures: number;
     compatibilityConnectionsRejected: number;
     syncDurationMs: AggregateMetric;
 }
@@ -123,8 +122,7 @@ export function createMediatorSyncStats(): MediatorSyncStats {
         bytesReceived: 0,
         protocolViolationCooldowns: 0,
         protocolViolationConnectionsRejected: 0,
-        transportFramingIncompatibilityClosures: 0,
-        negentropyVersionIncompatibilityClosures: 0,
+        wireVersionIncompatibilityClosures: 0,
         compatibilityConnectionsRejected: 0,
         syncDurationMs: createAggregateMetric(),
     };
@@ -176,8 +174,7 @@ export function buildSyncStatsSnapshot(syncStats: MediatorSyncStats): object {
             bytesReceived: syncStats.bytesReceived,
             protocolViolationCooldowns: syncStats.protocolViolationCooldowns,
             protocolViolationConnectionsRejected: syncStats.protocolViolationConnectionsRejected,
-            transportFramingIncompatibilityClosures: syncStats.transportFramingIncompatibilityClosures,
-            negentropyVersionIncompatibilityClosures: syncStats.negentropyVersionIncompatibilityClosures,
+            wireVersionIncompatibilityClosures: syncStats.wireVersionIncompatibilityClosures,
             compatibilityConnectionsRejected: syncStats.compatibilityConnectionsRejected,
         },
         syncDurationMs: {

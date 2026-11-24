@@ -22,7 +22,6 @@ import {
     encodeNegentropyFrame,
     normalizeNegentropyIds,
     parseRemoteWindow,
-    supportsPeerNegentropy,
 } from './negentropy/protocol.js';
 import { decideInboundNegOpenConflict } from './negentropy/policy.js';
 import { addAggregateSample } from './negentropy/observability.js';
@@ -167,8 +166,7 @@ interface PeerSyncSession {
 }
 
 interface NegentropyCoordinatorOptions {
-    version: number;
-    transportFramingVersion: number;
+    wireVersion: number;
     frameSizeLimit: number;
     maxRecordsPerWindow: number;
     maxRoundsPerSession: number;
@@ -372,8 +370,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     function supportsPeerTransport(conn: ConnectionInfo): boolean {
-        return supportsPeerNegentropy(conn.capabilities, options.version)
-            && conn.peerTransportFramingVersion === options.transportFramingVersion;
+        return conn.wireVersion === options.wireVersion;
     }
 
     function claimSessionSlot(peerKey: string, sessionId: string): number | null {
@@ -1973,10 +1970,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 {
                     peer: shortName(peerKey),
                     sessionId: msg.sessionId,
-                    peerVersion: conn.capabilities.version,
-                    requiredVersion: options.version,
-                    peerTransportFramingVersion: conn.peerTransportFramingVersion,
-                    requiredTransportFramingVersion: options.transportFramingVersion,
+                    peerWireVersion: conn.wireVersion,
+                    requiredWireVersion: options.wireVersion,
                 },
                 'ignoring neg_open from incompatible negentropy transport'
             );
@@ -2595,7 +2590,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
         const session = createPeerSession(peerKey, settings.initiator);
         try {
-            const peerLatestSignedTimestamp = conn.capabilities.latestSignedTimestamp;
+            const peerLatestSignedTimestamp = conn.capabilities.latestTs;
             const initialWindow = await buildInitialHistoryWindowForSession(peerLatestSignedTimestamp);
             if (peerSessions.get(peerKey) !== session) {
                 return false;

@@ -20,7 +20,7 @@ const limits = {
 const validDid = 'did:test:z3v8AuafbhTJJ8qqV5kEtfyd3c4NJm6jyUCpEkQrJU4YgdR6UFk';
 
 function base(type: string) {
-    return { type, time: '', node: 'node', relays: [] };
+    return { type };
 }
 
 function operation(): { cipher: CipherNode; value: Operation } {
@@ -48,27 +48,27 @@ describe('hyperswarm protocol validation', () => {
         const { value } = operation();
         const message = {
             ...base('queue'),
-            data: [value],
+            operations: [value],
         } as QueueMessage;
         const validated = validateQueueMessagePayload(message, limits);
 
         expect(validated).toEqual({
             ok: true,
             value: {
-                operations: message.data,
-                bytes: Buffer.byteLength(JSON.stringify(value), 'utf8'),
+                operations: message.operations,
+                bytes: Buffer.byteLength(JSON.stringify([value]), 'utf8'),
             },
         });
         expect(validateQueueMessagePayload({
             ...message,
-            data: 'invalid',
+            operations: 'invalid',
         } as unknown as QueueMessage, limits)).toMatchObject({
             ok: false,
             reason: 'operation page must be an array',
         });
         expect(validateQueueMessagePayload({
             ...message,
-            data: [value, value, value],
+            operations: [value, value, value],
         }, limits)).toMatchObject({
             ok: false,
             reason: 'operation page exceeds 2 operations',
@@ -84,28 +84,65 @@ describe('hyperswarm protocol validation', () => {
         });
     });
 
-    it('accepts a bounded ping and rejects malformed common fields', () => {
-        const valid = { ...base('ping'), peers: [validDid], transportFramingVersion: 1 };
+    it('accepts a bounded ping and rejects malformed optional fields', () => {
+        const valid = { ...base('ping'), version: 2, peerDids: [validDid] };
+        expect(validateHyperMessageEnvelope({ ...base('ping'), version: 2 }).ok).toBe(true);
         expect(validateHyperMessageEnvelope(valid).ok).toBe(true);
-        expect(validateHyperMessageEnvelope({ ...valid, relays: 'invalid' })).toMatchObject({ ok: false });
-        expect(validateHyperMessageEnvelope({ ...valid, relays: ['not-a-key'] })).toMatchObject({ ok: false });
-        expect(validateHyperMessageEnvelope({ ...valid, node: 'é'.repeat(129) })).toMatchObject({ ok: false });
-        expect(validateHyperMessageEnvelope({ ...valid, peers: 'invalid' })).toMatchObject({ ok: false });
-        expect(validateHyperMessageEnvelope({ ...valid, peers: ['not-a-did'] })).toMatchObject({ ok: false });
-        expect(validateHyperMessageEnvelope({ ...valid, capabilities: [] })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({ ...valid, name: 'é'.repeat(129) })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({ ...valid, peerDids: 'invalid' })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({ ...valid, peerDids: ['not-a-did'] })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({ ...valid, ordered: [] })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
-            capabilities: { negentropyVersion: '2' },
+            ordered: { count: '1', sourceReady: true },
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
-            capabilities: { operationCount: -1 },
+            ordered: { count: -1, sourceReady: false },
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...valid,
-            capabilities: { negentropyVersion: 2, operationCount: 1 },
+            ordered: { count: 1, sourceReady: true },
         }).ok).toBe(true);
+        expect(validateHyperMessageEnvelope({
+            ...valid,
+            ordered: { count: 0, sourceReady: true },
+        })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({
+            ...valid,
+            ordered: { count: 1, sourceReady: true, sourceReddy: true },
+        })).toMatchObject({
+            ok: false,
+            reason: 'ordered contains unknown property sourceReddy',
+        });
+        expect(validateHyperMessageEnvelope({ ...valid, misspelled: true })).toMatchObject({
+            ok: false,
+            reason: 'ping contains unknown property misspelled',
+        });
+        expect(validateHyperMessageEnvelope({ ...valid, '': true })).toMatchObject({
+            ok: false,
+            reason: 'ping contains unknown property ',
+        });
         expect(validateHyperMessageEnvelope({ ...valid, type: 'unknown' })).toMatchObject({ ok: false });
+    });
+
+    it('defers incompatible inbound pings to non-punitive version handling', () => {
+        const future = {
+            ...base('ping'),
+            version: 3,
+            ordered: 'future-shape',
+            futureCapability: true,
+        };
+
+        expect(validateHyperMessageEnvelope(future, 2)).toMatchObject({ ok: true });
+        expect(validateHyperMessageEnvelope(future)).toMatchObject({
+            ok: false,
+            reason: 'ping contains unknown property futureCapability',
+        });
+        expect(validateHyperMessageEnvelope({ type: 'ping' })).toMatchObject({
+            ok: false,
+            reason: 'version must be a safe integer >= 0',
+        });
     });
 
     it('requires exact session field types without coercion', () => {
@@ -183,14 +220,14 @@ describe('hyperswarm protocol validation', () => {
             offerId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
         } as never, limits)).toMatchObject({
             ok: false,
-            reason: 'ops_offer ids must be unique',
+            reason: 'ID at index 1 must be 64 hexadecimal characters',
         });
         expect(validateHyperMessagePayload({
             ...base('ops_req'), sessionId: 's', windowId: 'w', round: 0,
             requestId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
         } as never, limits)).toMatchObject({
             ok: false,
-            reason: 'ops_req ids must be unique',
+            reason: 'ID at index 1 must be 64 hexadecimal characters',
         });
         expect(validateHyperMessagePayload({
             ...base('ops_offer'), sessionId: 's', windowId: 'w', round: 0,

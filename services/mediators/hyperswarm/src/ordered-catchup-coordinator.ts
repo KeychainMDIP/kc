@@ -94,7 +94,6 @@ type CreateBaseMessage = <T extends OrderedCatchupMessageType>(
 ) => Omit<HyperMessageBase, 'type'> & { type: T };
 
 export interface OrderedCatchupCoordinatorOptions {
-    version: number;
     maxOpsPerPage: number;
     maxBytesPerPage: number;
     idleTimeoutMs: number;
@@ -423,8 +422,7 @@ export function createOrderedCatchupCoordinator(
         if (!connection) {
             return;
         }
-        if (connection.capabilities.orderedCatchup !== true
-            || connection.capabilities.orderedCatchupVersion !== options.version) {
+        if (!connection.capabilities.ordered) {
             log.warn({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up request from unsupported peer');
             return;
         }

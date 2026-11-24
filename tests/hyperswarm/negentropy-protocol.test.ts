@@ -8,7 +8,6 @@ import {
     normalizeNegentropyIds,
     normalizePeerCapabilities,
     parseRemoteWindow,
-    supportsPeerNegentropy,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -25,8 +24,6 @@ function makeOp(hash: string): Operation {
 }
 
 describe('negentropy protocol helpers', () => {
-    const currentNegentropyVersion = 1;
-
     it('encodes and decodes utf8 frame payloads', () => {
         const payload = encodeNegentropyFrame('frame-message');
         expect(payload.encoding).toBe('utf8');
@@ -41,106 +38,69 @@ describe('negentropy protocol helpers', () => {
         expect(Buffer.from(decoded as Uint8Array)).toStrictEqual(Buffer.from(bytes));
     });
 
-    it('normalizes peer capabilities and requires the exact Negentropy version', () => {
+    it('normalizes absent peer capabilities', () => {
         const unknown = normalizePeerCapabilities();
-        expect(unknown).toMatchObject({
-            orderedCatchup: false,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: false,
-            operationCount: null,
-            orderedOperationCount: null,
-            latestSignedTimestamp: null,
+        expect(unknown).toStrictEqual({
+            ordered: null,
+            latestTs: null,
         });
-        expect(supportsPeerNegentropy(unknown, currentNegentropyVersion)).toBe(false);
-
-        const negentropy = normalizePeerCapabilities({
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(supportsPeerNegentropy(negentropy, currentNegentropyVersion)).toBe(true);
-
-        const missingVersion = normalizePeerCapabilities();
-        expect(supportsPeerNegentropy(missingVersion, currentNegentropyVersion)).toBe(false);
-
-        const futureVersion = normalizePeerCapabilities({ negentropyVersion: 2 });
-        expect(supportsPeerNegentropy(futureVersion, currentNegentropyVersion)).toBe(false);
     });
 
     it('normalizes ordered catch-up capability fields', () => {
         const capabilities = normalizePeerCapabilities({
-            negentropyVersion: currentNegentropyVersion,
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 25,
-            orderedOperationCount: 25,
+            ordered: { count: 25, sourceReady: true },
         });
 
-        expect(capabilities).toMatchObject({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 25,
-            orderedOperationCount: 25,
+        expect(capabilities).toStrictEqual({
+            ordered: { count: 25, sourceReady: true },
+            latestTs: null,
         });
     });
 
-    it('normalizes invalid ordered catch-up counts to null', () => {
+    it('rejects incomplete or invalid ordered catch-up capabilities', () => {
         const capabilities = normalizePeerCapabilities({
-            orderedCatchup: true,
-            orderedCatchupVersion: Number.NaN,
-            orderedCatchupReady: true,
-            operationCount: -1,
-            orderedOperationCount: 1.5,
+            ordered: { count: -1, sourceReady: true },
         });
 
-        expect(capabilities).toMatchObject({
-            orderedCatchup: true,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: true,
-            operationCount: null,
-            orderedOperationCount: null,
-        });
+        expect(capabilities.ordered).toBeNull();
+        expect(normalizePeerCapabilities({
+            ordered: { count: 1, sourceReady: undefined as never },
+        }).ordered).toBeNull();
     });
 
     it('normalizes the latest signed timestamp', () => {
-        expect(normalizePeerCapabilities({ latestSignedTimestamp: 2_000 }).latestSignedTimestamp).toBe(2_000);
+        expect(normalizePeerCapabilities({ latestTs: 2_000 }).latestTs).toBe(2_000);
 
-        for (const latestSignedTimestamp of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
+        for (const latestTs of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
             expect(normalizePeerCapabilities({
-                latestSignedTimestamp: latestSignedTimestamp as number,
-            }).latestSignedTimestamp).toBeNull();
+                latestTs: latestTs as number,
+            }).latestTs).toBeNull();
         }
     });
 
     it('builds ordered catch-up readiness only when all operations are ordered', () => {
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 3,
             orderedOperationCount: 3,
         })).toStrictEqual({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 3,
-            orderedOperationCount: 3,
+            count: 3,
+            sourceReady: true,
         });
 
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 3,
             orderedOperationCount: 2,
-        })).toMatchObject({
-            orderedCatchupReady: false,
-            operationCount: 3,
-            orderedOperationCount: 2,
+        })).toStrictEqual({
+            count: 3,
+            sourceReady: false,
         });
 
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 0,
             orderedOperationCount: 0,
-        })).toMatchObject({
-            orderedCatchupReady: false,
+        })).toStrictEqual({
+            count: 0,
+            sourceReady: false,
         });
     });
 

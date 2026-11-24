@@ -10,18 +10,20 @@ Negentropy synchronization, it closes those sessions and drains admitted imports
 before switching to ordered catch-up. Negentropy still reconciles any differences
 after the ordered transfer.
 
-The current wire contract requires Negentropy v2 over framed transport v1. V2
-authorizes operation transfer through offers and requests, then sends one bounded
-page at a time and waits for an import acknowledgement. All network nodes must
-upgrade together because Negentropy v1 peers are intentionally incompatible.
+The current framed JSON wire contract has one exact compatibility version:
+`ping.version = 2`. It authorizes operation transfer through offers and requests,
+then sends one bounded page at a time and waits for an import acknowledgement.
+All network nodes must upgrade together because older message shapes are
+intentionally incompatible.
 
 Realtime propagation uses best-effort Gatekeeper queue gossip:
 
 - mediator polls one bounded `gatekeeper.getQueue('hyperswarm')` head page per
   existing flush
-- relays queue operations with a `queue` message
-- peers import operations, persist the shareable results, then relay them with
-  fresh relay metadata
+- relays queue operations with a `queue` message whose operation array is named
+  `operations`
+- peers import operations, persist the shareable results, then relay them while
+  excluding the immediate source locally
 
 Each receiver admits at most two gossip batches and bounds recent outcomes.
 Overload, incomplete imports and outbound delivery failures schedule targeted
@@ -54,16 +56,18 @@ kept in `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
 
 ## Transfer and resource limits
 
-Every message must use framed transport v1, including the initial ping. Raw JSON
-peers cannot connect. A compatible initial ping must advertise Negentropy v2
-before any queue or synchronization traffic is accepted. An admitted connection
-has 15 seconds to provide that compatible ping. Missing the deadline closes the
-connection and applies the existing bounded protocol cooldown; the separate
-stale-connection timeout still covers established peers that later stop
-communicating.
+Every message uses four-byte-length-prefixed JSON, including the initial ping.
+Raw JSON peers cannot connect. A compatible initial ping must advertise wire
+version 2 before any queue or synchronization traffic is accepted. The ping may
+also advertise a display name, discovery DIDs, the latest signed timestamp and
+ordered catch-up state. An admitted connection has 15 seconds to provide that
+compatible ping. Missing the deadline closes the connection and applies the
+existing bounded protocol cooldown; the separate stale-connection timeout still
+covers established peers that later stop communicating.
 
 Inbound and outbound operation pages have the same limits: 300 operations and
-512 KiB of serialized operation data. Offers and requests contain at most 1,000
+512 KiB for the exact UTF-8 bytes of the serialized operation array, including
+its brackets and commas. Offers and requests contain at most 1,000
 IDs. Synchronization windows contain at most 25,000 records. A single operation
 larger than the page limit fails that transfer rather than bypassing the limit.
 Local publication pages remain in Gatekeeper until imported and cleared; the
@@ -112,8 +116,8 @@ content IDs, terminate the connection. The remote public key receives a temporar
 cooldown of one minute, five minutes, thirty minutes, then six hours for repeated
 violations. Strikes decay after 24 hours without another violation. The
 process-local policy holds at most 4,096 entries and survives in-process swarm
-recreation. It does not survive a mediator restart. Incompatible framing or
-Negentropy versions receive a non-punitive one-minute retry delay.
+recreation. It does not survive a mediator restart. Incompatible MDIP wire
+versions receive a non-punitive one-minute retry delay.
 
 Gatekeeper rejection and local overload do not earn strikes. Operations without
 a content-verified synchronization ID are neither persisted nor advertised.
@@ -131,8 +135,8 @@ invalid data from alternatives valid on another history.
 
 ## Deployment compatibility
 
-Upgrade all Hyperswarm mediators together. Negentropy v1 has no fallback, and
-older peers are refused before application traffic. No database reset is needed.
+Upgrade all Hyperswarm mediators together. MDIP wire version 2 has no fallback,
+and older peers are refused before application traffic. No database reset is needed.
 Gatekeeper and every mediator must also support the bounded pending-event and
 paged-processing contract. Deploy the companion Gatekeeper ingress changes
 before claiming end-to-end memory protection.
@@ -141,7 +145,7 @@ before claiming end-to-end memory protection.
 
 The mediator emits periodic structured sync metrics in `connectionLoop` including:
 
-- Negentropy session and version-incompatibility counts
+- Negentropy session counts
 - negentropy rounds and have/need totals
 - ops requested/pushed sent and received
 - gatekeeper apply/reject totals
@@ -153,7 +157,7 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 - gossip overload drops, scheduled/started repairs, retry suppression, and
   shareable operations relayed after persistence
 - byte-budget refusals, frame timeouts, skipped pings, connection-capacity
-  refusals, and incompatibility closures
+  refusals, and wire-version incompatibility closures
 - Gatekeeper capacity outcomes, retry-delay evictions, terminal records persisted,
   and terminal rows removed at startup
 - current transport bytes, operation-page bytes, gossip admission and deduplication

@@ -13,6 +13,7 @@ import {
     decodeNegentropyFrame,
     encodeNegentropyFrame,
     normalizePeerCapabilities,
+    type PeerCapabilities,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import {
     buildInitialHistoryWindow,
@@ -21,7 +22,6 @@ import {
     makeWindowId,
     MDIP_EPOCH_SECONDS,
 } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
-import { estimateOperationBytes } from '../../services/mediators/hyperswarm/src/negentropy/transfer.ts';
 import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
     decodeFramedMessages,
@@ -41,7 +41,7 @@ import {
 
 installMediatorMocks();
 
-const NEGENTROPY_VERSION = 2;
+const WIRE_PROTOCOL_VERSION = 2;
 const hash = (char: string) => char.repeat(64);
 
 interface ProtocolNode {
@@ -69,25 +69,16 @@ async function eventually(assertion: () => boolean | Promise<boolean>, turns = 1
     throw new Error(`observable mediator condition did not settle after ${turns} turns`);
 }
 
-function compatibleCapabilities(overrides: Record<string, unknown> = {}) {
-    return normalizePeerCapabilities({
-        negentropyVersion: NEGENTROPY_VERSION,
-        orderedCatchup: false,
-        ...overrides,
-    });
+function compatibleCapabilities(overrides: PeerCapabilities = {}) {
+    return normalizePeerCapabilities(overrides);
 }
 
 function peerPing(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         type: 'ping',
-        time: new Date().toISOString(),
-        node: 'peer',
-        relays: [],
-        peers: [],
-        capabilities: {
-            negentropyVersion: NEGENTROPY_VERSION,
-        },
-        transportFramingVersion: 1,
+        version: WIRE_PROTOCOL_VERSION,
+        name: 'peer',
+        peerDids: [],
         ...overrides,
     };
 }
@@ -107,13 +98,12 @@ function encodeFramedMessage(payload: string | Uint8Array): Buffer {
         return encodeTransportFrame(payload);
     }
     const message = value as Record<string, unknown>;
-    return encodeTransportFrame(JSON.stringify({
-        time: new Date().toISOString(),
-        node: 'peer',
-        relays: [],
-        round: 0,
-        ...message,
-    }));
+    const needsRound = new Set([
+        'neg_open', 'neg_msg', 'neg_close', 'ops_offer', 'ops_req', 'ops_push', 'ops_ack',
+    ]).has(String(message.type));
+    return encodeTransportFrame(JSON.stringify(needsRound && message.round === undefined
+        ? { round: 0, ...message }
+        : message));
 }
 
 function decodeWrites(pair: RecordingDuplexPair): Array<Record<string, unknown>> {
@@ -509,13 +499,11 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pair.transcript).toHaveLength(1);
         expect(pair.transcript[0]).toMatchObject({ messageType: 'ping', framed: true });
         expect(decodeWrites(pair)[0]).toMatchObject({
-            transportFramingVersion: 1,
-            capabilities: {
-                negentropyVersion: 2,
-                orderedCatchup: true,
-                orderedCatchupVersion: 1,
-                orderedCatchupReady: false,
-                latestSignedTimestamp,
+            version: 2,
+            latestTs: latestSignedTimestamp,
+            ordered: {
+                count: 1,
+                sourceReady: false,
             },
         });
 
@@ -558,14 +546,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             }]);
         }
         const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
-        const capabilities = {
-            negentropyVersion: NEGENTROPY_VERSION,
-            ...(peerLatestSignedTimestamp === null ? {} : { latestSignedTimestamp: peerLatestSignedTimestamp }),
-        };
-
         try {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
-                capabilities,
+                ...(peerLatestSignedTimestamp === null ? {} : { latestTs: peerLatestSignedTimestamp }),
             })));
         }
         finally {
@@ -583,17 +566,17 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it.each([
-        ['missing capabilities', undefined],
-        ['version mismatch', { negentropyVersion: 1 }],
+        ['missing version', undefined],
+        ['version mismatch', 1],
     ])('closes a peer with %s', async (
         _case,
-        capabilities,
+        version,
     ) => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
-            capabilities,
+            version,
         })));
 
         expect(protocolNode.node.run(
@@ -602,7 +585,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pair.transcript).toHaveLength(0);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
-        )).toMatchObject({ transport: { negentropyVersionIncompatibilityClosures: 1 } });
+        )).toMatchObject({ transport: { wireVersionIncompatibilityClosures: 1 } });
     });
 
     it('ignores removed full-store sync messages', async () => {
@@ -667,8 +650,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const coalesced = Buffer.concat(operations.map(operation => encodeFramedMessage(JSON.stringify({
             type: 'queue',
-            relays: [],
-            data: [operation],
+            operations: [operation],
         }))));
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.processInboundPeerData(peerKey, coalesced),
@@ -678,19 +660,19 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it.each([
-        ['raw ping without a framing version', false, undefined, true],
-        ['framed ping without a framing version', true, undefined, false],
-        ['framed ping with an unsupported framing version', true, 2, false],
+        ['raw ping without a wire version', false, undefined, true],
+        ['framed ping without a wire version', true, undefined, false],
+        ['framed ping with an unsupported wire version', true, 1, false],
     ])('closes a %s without starting synchronization', async (
         _case,
         framed,
-        transportFramingVersion,
+        version,
         punitive,
     ) => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode);
         const destroySpy = jest.spyOn(pair.connectionA, 'destroy');
-        const ping = peerPing({ transportFramingVersion });
+        const ping = peerPing({ version });
         const payload = Buffer.from(JSON.stringify(ping));
 
         await protocolNode.node.run(
@@ -710,7 +692,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toMatchObject({
             transport: {
                 protocolViolationCooldowns: punitive ? 1 : 0,
-                transportFramingIncompatibilityClosures: punitive ? 0 : 1,
+                wireVersionIncompatibilityClosures: punitive ? 0 : 1,
             },
         });
     });
@@ -718,7 +700,7 @@ describe('hyperswarm mediator protocol characterization', () => {
     it('quarantines framed protocol traffic received before a compatible ping', async () => {
         const protocolNode = await createNode();
         const { peerKey, pair } = attachPeer(protocolNode, {
-            overrides: { peerTransportFramingVersion: null, initialPingReceived: false },
+            overrides: { wireVersion: null, initialPingReceived: false },
         });
 
         await protocolNode.node.run(
@@ -746,7 +728,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode);
         const payload = Buffer.concat([
             encodeFramedMessage(JSON.stringify(peerPing({
-                transportFramingVersion: undefined,
+                version: undefined,
             }))),
             encodeFramedMessage(JSON.stringify(peerPing())),
         ]);
@@ -761,7 +743,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pair.transcript).toHaveLength(0);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
-        )).toMatchObject({ transport: { transportFramingIncompatibilityClosures: 1 } });
+        )).toMatchObject({ transport: { wireVersionIncompatibilityClosures: 1 } });
     });
 
     it('terminates a peer that sends a fragmented raw ping', async () => {
@@ -806,7 +788,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                Buffer.from(JSON.stringify({ type: 'queue', data: [], relays: [] })),
+                Buffer.from(JSON.stringify({ type: 'queue', operations: [] })),
             ),
         );
 
@@ -987,7 +969,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'queue',
-            data: [forged],
+            operations: [forged],
         }));
 
         expect(protocolNode.node.run(
@@ -1035,15 +1017,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         const smaller = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 5, orderedOperationCount: 5,
+                ordered: { count: 5, sourceReady: true },
             }) },
         });
         const larger = attachPeer(protocolNode, {
             peerKeyByte: 0x44,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 10, orderedOperationCount: 10,
+                ordered: { count: 10, sourceReady: true },
             }) },
         });
 
@@ -1066,8 +1046,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 10, orderedOperationCount: 10,
+                ordered: { count: 10, sourceReady: true },
             }) },
         });
 
@@ -1093,8 +1072,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x44,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                    operationCount: 10, orderedOperationCount: 10,
+                    ordered: { count: 10, sourceReady: true },
                 }),
             },
         });
@@ -1118,15 +1096,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         const first = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 100_000, orderedOperationCount: 100_000,
+                ordered: { count: 100_000, sourceReady: true },
             }) },
         });
         const second = attachPeer(protocolNode, {
             peerKeyByte: 0x44,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 100_100, orderedOperationCount: 100_100,
+                ordered: { count: 100_100, sourceReady: true },
             }) },
         });
 
@@ -1147,15 +1123,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         const smaller = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 30_000, orderedOperationCount: 30_000,
+                ordered: { count: 30_000, sourceReady: true },
             }) },
         });
         const larger = attachPeer(protocolNode, {
             peerKeyByte: 0x44,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 40_000, orderedOperationCount: 40_000,
+                ordered: { count: 40_000, sourceReady: true },
             }) },
         });
 
@@ -1179,8 +1153,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 100_000, orderedOperationCount: 100_000,
+                ordered: { count: 100_000, sourceReady: true },
             }) },
         });
 
@@ -1200,8 +1173,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 100_000, orderedOperationCount: 100_000,
+                ordered: { count: 100_000, sourceReady: true },
             }) },
         });
         jest.spyOn(protocolNode.store, 'count')
@@ -1230,8 +1202,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 100_000, orderedOperationCount: 100_000,
+                ordered: { count: 100_000, sourceReady: true },
             }) },
         });
         jest.spyOn(protocolNode.store, 'count')
@@ -1268,14 +1239,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             return originalImport(events);
         });
         const queued = protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, {
-            type: 'queue', data: [operation],
+            type: 'queue', operations: [operation],
         }));
         await started;
         const ready = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 10, orderedOperationCount: 10,
+                ordered: { count: 10, sourceReady: true },
             }) },
         });
         const switching = protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
@@ -1304,8 +1274,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: 4 });
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: { capabilities: compatibleCapabilities({
-                orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                operationCount: 10, orderedOperationCount: 10,
+                ordered: { count: 10, sourceReady: true },
             }) },
         });
         const count = protocolNode.store.count.bind(protocolNode.store);
@@ -1328,7 +1297,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 peerKey, encodeFramedMessage(JSON.stringify({ type: 'unknown' })),
             ));
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
-                peerKey, Buffer.from(JSON.stringify({ type: 'queue', data: [], relays: [] })),
+                peerKey, Buffer.from(JSON.stringify({ type: 'queue', operations: [] })),
             ));
             resume();
             await switching;
@@ -1341,8 +1310,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const healthy = attachPeer(protocolNode, {
                 peerKeyByte: 0x33,
                 overrides: { capabilities: compatibleCapabilities({
-                    orderedCatchup: true, orderedCatchupVersion: 1, orderedCatchupReady: true,
-                    operationCount: 5, orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }) },
             });
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(healthy.peerKey));
@@ -1410,9 +1378,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             reason: 'ordered_catchup_active',
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
-            capabilities: {
-                negentropyVersion: 1,
-            },
+            version: 1,
         })));
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
@@ -1741,10 +1707,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         let pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(1);
         expect(pushes[0]).toMatchObject({ page: 0, hasMore: true });
-        expect((pushes[0].data as Operation[]).reduce(
-            (total, operation) => total + estimateOperationBytes(operation),
-            0,
-        )).toBeLessThanOrEqual(512 * 1024);
+        expect(Buffer.byteLength(JSON.stringify(pushes[0].data), 'utf8')).toBeLessThanOrEqual(512 * 1024);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
@@ -1757,10 +1720,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(2);
         expect(pushes[1]).toMatchObject({ page: 1, hasMore: false });
-        expect((pushes[1].data as Operation[]).reduce(
-            (total, operation) => total + estimateOperationBytes(operation),
-            0,
-        )).toBeLessThanOrEqual(512 * 1024);
+        expect(Buffer.byteLength(JSON.stringify(pushes[1].data), 'utf8')).toBeLessThanOrEqual(512 * 1024);
         expect(pushes.flatMap(message => (message.data as Operation[]).map(
             operation => operation.signature!.hash,
         )).sort()).toEqual(operations.map(operation => operation.signature!.hash).sort());
@@ -2774,11 +2734,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const initialPeer = attachPeer(protocolNode, {
                 overrides: {
                     capabilities: compatibleCapabilities({
-                        orderedCatchup: true,
-                        orderedCatchupVersion: 1,
-                        orderedCatchupReady: true,
-                        operationCount: peerOperationCount,
-                        orderedOperationCount: peerOperationCount,
+                        ordered: { count: peerOperationCount, sourceReady: peerOperationCount > 0 },
                     }),
                 },
             });
@@ -2873,12 +2829,12 @@ describe('hyperswarm mediator protocol characterization', () => {
         try {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                encodeFramedMessage(JSON.stringify({ type: 'queue', relays: [], data: [operations[0]] })),
+                encodeFramedMessage(JSON.stringify({ type: 'queue', operations: [operations[0]] })),
             ));
             await firstBuildStarted;
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                encodeFramedMessage(JSON.stringify({ type: 'queue', relays: [], data: [operations[1]] })),
+                encodeFramedMessage(JSON.stringify({ type: 'queue', operations: [operations[1]] })),
             ));
             await eventually(async () => (await protocolNode.store.count()) === 2);
             await nextTurn();
@@ -2941,7 +2897,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
 
         try {
-            await send({ type: 'queue', relays: [], data: [operations[0]] });
+            await send({ type: 'queue', operations: [operations[0]] });
             await firstBuildStarted;
             protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.createOrderedCatchupClientSession(peerKey, 'deferred-build-session'),
@@ -4372,10 +4328,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [newOperation] = await makeOperations(1);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(thirdPeer.peerKey, {
             type: 'queue',
-            time: new Date().toISOString(),
-            node: 'peer',
-            relays: [],
-            data: [newOperation],
+            operations: [newOperation],
         }));
         await eventually(() => protocolNode.store.has(newOperation.signature!.hash));
 
@@ -4616,11 +4569,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 275_000,
-                    orderedOperationCount: 275_000,
+                    ordered: { count: 275_000, sourceReady: true },
                 }),
             },
         });
@@ -4644,11 +4593,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }),
             },
         });
@@ -4656,11 +4601,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x33,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }),
             },
         });
@@ -4771,11 +4712,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }),
             },
         });
@@ -4826,11 +4763,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }),
             },
         });
@@ -4893,11 +4826,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 1,
-                    orderedOperationCount: 1,
+                    ordered: { count: 1, sourceReady: true },
                 }),
             },
         });
@@ -5563,7 +5492,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(replacement).not.toBeNull();
     });
 
-    it('imports queue gossip, ignores forged relay hints, and filters known operations', async () => {
+    it('imports queue gossip, excludes its source locally, and filters known operations', async () => {
         const [knownOperation, newOperation] = await makeOperations(2);
         const protocolNode = await createNode({ keyByte: 0x44 });
         const source = attachPeer(protocolNode, { peerKeyByte: 0x11 });
@@ -5572,8 +5501,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const queueMessage = {
             type: 'queue',
-            relays: [excluded.peerKey],
-            data: [knownOperation],
+            operations: [knownOperation],
         };
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(source.peerKey, queueMessage),
@@ -5584,8 +5512,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(excluded.pair.transcript.map(entry => entry.messageType)).toEqual(['queue']);
         expect(recipient.pair.transcript.map(entry => entry.messageType)).toEqual(['queue']);
         expect(decodeWrites(excluded.pair)[0]).toMatchObject({
-            relays: [source.peerKey],
-            data: [knownOperation],
+            operations: [knownOperation],
         });
 
         await protocolNode.node.run(
@@ -5596,15 +5523,14 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(source.peerKey, {
             type: 'queue',
-            relays: [],
-            data: [knownOperation, newOperation],
+            operations: [knownOperation, newOperation],
         }));
         await eventually(async () => await protocolNode.store.has(newOperation.signature!.hash));
 
         const lastImport = protocolNode.node.gatekeeperClient.importBatch.mock.calls.at(-1)?.[0] ?? [];
         expect(lastImport.map(event => event.operation.signature?.hash)).toEqual([newOperation.signature!.hash]);
         expect(await protocolNode.store.count()).toBe(2);
-        expect(decodeWrites(recipient.pair).at(-1)).toMatchObject({ data: [newOperation] });
+        expect(decodeWrites(recipient.pair).at(-1)).toMatchObject({ operations: [newOperation] });
     });
 
     it('serves ordered catch-up pages and validates request cursors', async () => {
@@ -5619,11 +5545,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 0,
-                    orderedOperationCount: 0,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -5742,11 +5664,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 2,
-                    orderedOperationCount: 2,
+                    ordered: { count: 2, sourceReady: true },
                 }),
             },
         });
@@ -6187,11 +6105,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
+                    ordered: { count: 5, sourceReady: true },
                 }),
             },
         });
@@ -6258,9 +6172,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const { peerKey, pair } = attachPeer(protocolNode, {
                 overrides: {
                     capabilities: compatibleCapabilities({
-                        orderedCatchup: true,
-                        orderedCatchupVersion: 1,
-                        orderedCatchupReady: true,
+                        ordered: { count: 0, sourceReady: false },
                     }),
                 },
             });
@@ -6297,9 +6209,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -6395,9 +6305,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -6485,20 +6393,14 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
         const otherPeer = attachPeer(protocolNode, {
             peerKeyByte: 0x33,
             overrides: {
-                capabilities: compatibleCapabilities({
-                    orderedCatchup: false,
-                    operationCount: 5,
-                    orderedOperationCount: 5,
-                }),
+                capabilities: compatibleCapabilities(),
             },
         });
         const processEvents = protocolNode.node.gatekeeperClient.processEvents;
@@ -6643,9 +6545,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -6680,24 +6580,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toBeNull();
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
-        )).toMatchObject({
-            orderedCatchup: {
-                sessionsStarted: 1,
-                sessionsCompleted: 0,
-                sessionsFailed: 1,
-            },
-            syncDurationMs: { sessions: 1 },
-        });
     });
 
     it('applies index reset handling before completing ordered catch-up', async () => {
         const protocolNode = await createNode({ keyByte: 0x22 });
-        const { peerKey, pair } = attachPeer(protocolNode, {
+        const { peerKey } = attachPeer(protocolNode, {
             peerKeyByte: 0x11,
             overrides: {
-                capabilities: compatibleCapabilities({ negentropyVersion: 1 }),
+                capabilities: compatibleCapabilities(),
             },
         });
         const index = await protocolNode.node.gatekeeperDb.exportIndexSnapshot({
@@ -6729,26 +6619,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             })),
         ));
         await eventually(() => reset.mock.calls.length === 1);
-        await eventually(() => protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.syncStarted,
-        ) === false);
 
-        expect(protocolNode.node.run(
+        const state = protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
-        )).toMatchObject({
-            syncStarted: false,
-            activeSession: null,
-        });
-        expect(pair.transcript.some(entry => entry.messageType === 'neg_open')).toBe(false);
-        expect(protocolNode.node.run(
-            () => protocolNode.node.mediator.__test.getSyncStatsSnapshot(),
-        )).toMatchObject({
-            orderedCatchup: {
-                sessionsStarted: 1,
-                sessionsCompleted: 0,
-                sessionsFailed: 1,
-            },
-            syncDurationMs: { sessions: 1 },
+        );
+        expect(state?.activeSession).not.toEqual({
+            mode: 'ordered_catchup',
+            sessionId: 'reset-index-session',
         });
     });
 
@@ -6767,10 +6644,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 peerKeyByte: 0x11,
                 overrides: {
                     capabilities: compatibleCapabilities({
-                        negentropyVersion: 1,
-                        orderedCatchup: true,
-                        orderedCatchupVersion: 1,
-                        orderedCatchupReady: true,
+                        ordered: { count: 0, sourceReady: false },
                     }),
                 },
             });
@@ -6778,10 +6652,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 peerKeyByte: 0x33,
                 overrides: {
                     capabilities: compatibleCapabilities({
-                        negentropyVersion: 1,
-                        orderedCatchup: true,
-                        orderedCatchupVersion: 1,
-                        orderedCatchupReady: true,
+                        ordered: { count: 0, sourceReady: false },
                     }),
                 },
             });
@@ -6882,9 +6753,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const initialPeer = attachPeer(protocolNode, {
                 overrides: {
                     capabilities: compatibleCapabilities({
-                        orderedCatchup: true,
-                        orderedCatchupVersion: 1,
-                        orderedCatchupReady: true,
+                        ordered: { count: 0, sourceReady: false },
                     }),
                 },
             });
@@ -6965,9 +6834,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -7017,9 +6884,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -7068,9 +6933,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, {
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -7082,10 +6945,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
         let pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
         const firstPage = pushes[0].data as Operation[];
-        const firstPageBytes = firstPage.reduce((total, operation) => total + estimateOperationBytes(operation), 0);
+        const firstPageBytes = Buffer.byteLength(JSON.stringify(firstPage), 'utf8');
         expect(firstPage.length).toBeLessThan(operations.length);
         expect(firstPageBytes).toBeLessThanOrEqual(512 * 1024);
-        expect(firstPageBytes + estimateOperationBytes(operations[firstPage.length])).toBeGreaterThan(512 * 1024);
+        expect(Buffer.byteLength(JSON.stringify([
+            ...firstPage,
+            operations[firstPage.length],
+        ]), 'utf8')).toBeGreaterThan(512 * 1024);
         expect(pushes[0].hasMore).toBe(true);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -7111,9 +6977,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             peerKeyByte: 0x22,
             overrides: {
                 capabilities: compatibleCapabilities({
-                    orderedCatchup: true,
-                    orderedCatchupVersion: 1,
-                    orderedCatchupReady: true,
+                    ordered: { count: 0, sourceReady: false },
                 }),
             },
         });
@@ -7243,9 +7107,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             sessionId: 'server-session',
         } as any;
         const orderedCapabilities = compatibleCapabilities({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
+            ordered: { count: 0, sourceReady: false },
         });
 
         const unsupportedNode = await createNode();

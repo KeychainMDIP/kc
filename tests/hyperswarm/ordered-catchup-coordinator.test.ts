@@ -79,10 +79,9 @@ function createCoordinator(overrides: Partial<Pick<
 >> = {}) {
     const connection = {
         capabilities: normalizePeerCapabilities({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
+            ordered: { count: 1, sourceReady: true },
         }),
-        peerTransportFramingVersion: 1,
+        wireVersion: 2,
     } as ConnectionInfo;
     const importPipeline = overrides.importPipeline ?? {
         available: true, recovering: false,
@@ -91,7 +90,6 @@ function createCoordinator(overrides: Partial<Pick<
     } as unknown as ImportPipeline;
     const sendToPeer = overrides.sendToPeer ?? (() => true);
     return createOrderedCatchupCoordinator({
-        version: 1,
         maxOpsPerPage: 256,
         maxBytesPerPage: 1_000_000,
         idleTimeoutMs: 120_000,
@@ -103,7 +101,7 @@ function createCoordinator(overrides: Partial<Pick<
         operationPages: overrides.operationPages ?? createOperationPageBudget(5, 5_000_000),
         getConnection: overrides.getConnection ?? (key => key === peerKey ? connection : undefined),
         createSessionId: () => 'session',
-        createBaseMessage: type => ({ type, time: '', node: '', relays: [] }),
+        createBaseMessage: type => ({ type }),
         sendToPeer,
         sendBulkToPeer: overrides.sendBulkToPeer ?? (async (key, message) => sendToPeer(key, message)),
         onIndexRefreshed: overrides.onIndexRefreshed ?? jest.fn(async () => undefined),
@@ -135,7 +133,7 @@ describe('ordered catch-up coordinator shutdown', () => {
 
         expect(coordinator.createClientSession(peerKey, `shutdown-${phase}`)).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: `shutdown-${phase}`,
+            type: 'ordered_catchup_done', sessionId: `shutdown-${phase}`,
         });
         await started;
         const shutdown = coordinator.shutdown();
@@ -152,7 +150,7 @@ describe('ordered catch-up coordinator shutdown', () => {
 
         expect(coordinator.createClientSession(peerKey, 'handoff-error')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'handoff-error',
+            type: 'ordered_catchup_done', sessionId: 'handoff-error',
         });
         await nextTurn();
 
@@ -187,7 +185,7 @@ describe('ordered catch-up coordinator shutdown', () => {
         };
         expect(coordinator.createClientSession(peerKey, 'reset-session')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_push', sessionId: 'reset-session', time: '', node: '', relays: [],
+            type: 'ordered_catchup_push', sessionId: 'reset-session',
             cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false,
             data: [operation],
         });
@@ -246,9 +244,6 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'transition-session')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_done',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'transition-session',
         });
         await transitionStarted;
@@ -304,9 +299,6 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'failed-import')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'failed-import',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -343,9 +335,6 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'capacity')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'capacity',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -379,9 +368,6 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'forged-page')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'forged-page',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -431,9 +417,6 @@ describe('ordered catch-up coordinator shutdown', () => {
         expect(coordinator.createClientSession(peerKey, 'disconnect-import')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'disconnect-import',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -466,7 +449,7 @@ describe('ordered catch-up request authorization', () => {
 
         expect(coordinator.createClientSession(peerKey, 'prefetch-failed')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'prefetch-failed',
+            type: 'ordered_catchup_push', sessionId: 'prefetch-failed',
             cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
         });
         await nextTurn();
@@ -494,7 +477,7 @@ describe('ordered catch-up request authorization', () => {
 
         expect(coordinator.createClientSession(peerKey, 'completion-error')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'completion-error',
+            type: 'ordered_catchup_push', sessionId: 'completion-error',
             cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
         });
 
@@ -518,11 +501,11 @@ describe('ordered catch-up request authorization', () => {
 
         expect(coordinator.createClientSession(peerKey, 'terminal')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'terminal',
+            type: 'ordered_catchup_done', sessionId: 'terminal',
         });
         await started;
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'terminal',
+            type: 'ordered_catchup_done', sessionId: 'terminal',
         });
         release();
         await nextTurn();
@@ -538,9 +521,6 @@ describe('ordered catch-up request authorization', () => {
 
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'unknown-session',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -566,9 +546,6 @@ describe('ordered catch-up request authorization', () => {
 
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'unknown-session',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -599,9 +576,6 @@ describe('ordered catch-up request authorization', () => {
             await coordinator.handleMessage(peerKey, type === 'ordered_catchup_push'
                 ? {
                     type,
-                    time: '',
-                    node: '',
-                    relays: [],
                     sessionId: 'unsolicited',
                     cursor: { syncOrder: 1, id: operation.signature.hash },
                     hasMore: true,
@@ -609,9 +583,6 @@ describe('ordered catch-up request authorization', () => {
                 }
                 : {
                     type,
-                    time: '',
-                    node: '',
-                    relays: [],
                     sessionId: 'unsolicited',
                 });
 
@@ -633,9 +604,6 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'empty-page')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'empty-page',
             cursor: { syncOrder: 1, id: 'a'.repeat(64) },
             hasMore: false,
@@ -706,9 +674,6 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'malformed-page')).toBe(true);
         await expect(coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'malformed-page',
             cursor: { syncOrder: 1, id: 'a'.repeat(64) },
             hasMore: false,
@@ -749,9 +714,6 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'duplicate-operations')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'duplicate-operations',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
@@ -783,9 +745,6 @@ describe('ordered catch-up request authorization', () => {
         const operation = makeOperation();
         const page = {
             type: 'ordered_catchup_push' as const,
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'duplicate-page',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: true,
@@ -822,9 +781,6 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'mismatched-cursor')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'mismatched-cursor',
             cursor: { syncOrder: 1, id: 'f'.repeat(64) },
             hasMore: true,
@@ -846,9 +802,9 @@ describe('ordered catch-up server cursors and scheduling', () => {
     function makeCompatibleConnection(): ConnectionInfo {
         return {
             capabilities: normalizePeerCapabilities({
-                orderedCatchup: true,
-                orderedCatchupVersion: 1,
+                ordered: { count: 1, sourceReady: true },
             }),
+            wireVersion: 2,
         } as ConnectionInfo;
     }
 
@@ -884,7 +840,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const coordinator = createCoordinator({ syncStore: store });
 
         await expect(coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: `failed-${phase}`,
+            type: 'ordered_catchup_req', sessionId: `failed-${phase}`,
         })).rejects.toBe(failure);
 
         expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
@@ -908,17 +864,17 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const operation = makeOperation();
 
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'disconnected-request',
+            type: 'ordered_catchup_req', sessionId: 'disconnected-request',
         });
         expect(coordinator.createClientSession(peerKey, 'disconnected-push')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_push', time: '', node: '', relays: [], sessionId: 'disconnected-push',
+            type: 'ordered_catchup_push', sessionId: 'disconnected-push',
             cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false, data: [operation],
         });
         coordinator.reset();
         expect(coordinator.createClientSession(peerKey, 'disconnected-done')).toBe(true);
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_done', time: '', node: '', relays: [], sessionId: 'disconnected-done',
+            type: 'ordered_catchup_done', sessionId: 'disconnected-done',
         });
 
         expect(onProtocolViolation).not.toHaveBeenCalled();
@@ -974,7 +930,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const coordinator = createCoordinator({ operationPages, syncStore: store });
 
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'capacity',
+            type: 'ordered_catchup_req', sessionId: 'capacity',
         });
 
         expect(store.iterateOrdered).not.toHaveBeenCalled();
@@ -994,7 +950,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         });
 
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'server',
+            type: 'ordered_catchup_req', sessionId: 'server',
         });
         expect(sent[0]).toMatchObject({
             type: 'ordered_catchup_push',
@@ -1004,9 +960,6 @@ describe('ordered catch-up server cursors and scheduling', () => {
 
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'server',
             cursor: sent[0].cursor as { syncOrder: number; id: string },
         });
@@ -1029,13 +982,10 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const coordinator = createCoordinator({ syncStore: store, onProtocolViolation });
 
         await coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'server',
+            type: 'ordered_catchup_req', sessionId: 'server',
         });
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'server',
             ...(cursor ? { cursor } : {}),
         });
@@ -1055,9 +1005,6 @@ describe('ordered catch-up server cursors and scheduling', () => {
 
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: 'server',
             cursor: { syncOrder: 1, id: operations[0].signature.hash },
         });
@@ -1074,9 +1021,9 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const peerKeys = ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)];
         const connection = {
             capabilities: normalizePeerCapabilities({
-                orderedCatchup: true,
-                orderedCatchupVersion: 1,
+                ordered: { count: 1, sourceReady: true },
             }),
+            wireVersion: 2,
         } as ConnectionInfo;
         const releases: Array<() => void> = [];
         let active = 0;
@@ -1102,9 +1049,6 @@ describe('ordered catch-up server cursors and scheduling', () => {
 
         const requests = peerKeys.map((key, index) => coordinator.handleMessage(key, {
             type: 'ordered_catchup_req',
-            time: '',
-            node: '',
-            relays: [],
             sessionId: `server-${index}`,
         }));
         await nextTurn();
@@ -1156,14 +1100,14 @@ describe('ordered catch-up server cursors and scheduling', () => {
         });
 
         const staleRequest = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'stale',
+            type: 'ordered_catchup_req', sessionId: 'stale',
         });
         await firstReadStarted;
         coordinator.removePeer(peerKey, 'disconnect');
         connection = makeCompatibleConnection();
 
         const replacementRequest = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'replacement',
+            type: 'ordered_catchup_req', sessionId: 'replacement',
         });
         await nextTurn();
         expect(reads).toBe(1);
@@ -1206,13 +1150,13 @@ describe('ordered catch-up server cursors and scheduling', () => {
         });
 
         const staleRequest = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'shared-session',
+            type: 'ordered_catchup_req', sessionId: 'shared-session',
         });
         await firstSendStarted;
         coordinator.removePeer(peerKey, 'disconnect');
         connection = makeCompatibleConnection();
         const replacementRequest = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'shared-session',
+            type: 'ordered_catchup_req', sessionId: 'shared-session',
         });
 
         releaseFirstSend(false);
@@ -1250,7 +1194,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         });
 
         const request = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'complete',
+            type: 'ordered_catchup_req', sessionId: 'complete',
         });
         await sendStarted;
         const pending = bulkReads.run(peerKey, async () => 'next');
@@ -1272,7 +1216,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const coordinator = createCoordinator({ bulkReads, syncStore: store });
 
         const expired = coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'expired',
+            type: 'ordered_catchup_req', sessionId: 'expired',
         });
         await nextTurn();
         expect(coordinator.getPeerState(peerKey).serverSessionId).toBe('expired');
@@ -1283,7 +1227,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         await blocker;
 
         await expect(coordinator.handleMessage(peerKey, {
-            type: 'ordered_catchup_req', time: '', node: '', relays: [], sessionId: 'retry',
+            type: 'ordered_catchup_req', sessionId: 'retry',
         })).resolves.toBeUndefined();
         await coordinator.shutdown();
         await bulkReads.shutdown();
