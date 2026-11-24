@@ -139,7 +139,6 @@ export function createOrderedCatchupCoordinator(
             maxIdsPerRequest: 1,
             maxOpsPerPush: options.maxOpsPerPage,
             maxBytesPerPush: options.maxBytesPerPage,
-            maxFrameBytes: 0,
             maxRecordsPerWindow: 1,
         });
         if (!result.ok) {

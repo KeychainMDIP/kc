@@ -19,7 +19,6 @@ import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
-    makeWindowId,
     MDIP_EPOCH_SECONDS,
 } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
@@ -38,6 +37,28 @@ import {
     createRecordingDuplexPair,
     type RecordingDuplexPair,
 } from './recording-duplex.ts';
+
+const nativeFrame = (value: string): Uint8Array => Buffer.from(value);
+
+function reconciliationWindow(message: Record<string, unknown>): ReconciliationWindow {
+    const window = message.window as { until: number; limit: number; after?: { ts: number; id: string } };
+    return {
+        name: 'history_paged',
+        fromTs: MDIP_EPOCH_SECONDS,
+        toTs: window.until,
+        maxRecords: window.limit,
+        order: Number(message.windowSeq),
+        ...(window.after ? { after: window.after } : {}),
+    };
+}
+
+function wireWindow(window: ReconciliationWindow): Record<string, unknown> {
+    return {
+        until: window.toTs,
+        limit: window.maxRecords,
+        ...(window.after ? { after: window.after } : {}),
+    };
+}
 
 installMediatorMocks();
 
@@ -125,7 +146,7 @@ function requestedOpsPush(
     return {
         type: 'ops_push',
         sessionId: request.sessionId,
-        windowId: request.windowId,
+        windowSeq: request.windowSeq,
         round: request.round,
         requestId: request.requestId,
         page: 0,
@@ -154,7 +175,7 @@ async function deliverAuthorizedPush(
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round,
             offerId,
             ids,
@@ -426,10 +447,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('request-operations'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('request-operations')),
         }));
         return open;
     }
@@ -556,7 +577,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
 
         const open = decodeWrites(pair).find(message => message.type === 'neg_open');
-        expect((open?.window as { toTs?: number } | undefined)?.toTs).toBe(
+        expect((open?.window as { until?: number } | undefined)?.until).toBe(
             Math.max(
                 Math.floor(nowMs / 1000),
                 localLatestSignedTimestamp ?? 0,
@@ -832,17 +853,25 @@ describe('hyperswarm mediator protocol characterization', () => {
         ['window range', (open: Record<string, unknown>) => ({
             ...open,
             sessionId: 'invalid-window',
-            window: { ...(open.window as Record<string, unknown>), fromTs: 2, toTs: 1 },
+            window: { ...(open.window as Record<string, unknown>), until: MDIP_EPOCH_SECONDS - 1 },
         })],
         ['window ID', (open: Record<string, unknown>) => ({
             ...open,
             sessionId: 'invalid-window-id',
-            windowId: '',
+            windowSeq: '',
         })],
         ['window identity', (open: Record<string, unknown>) => ({
             ...open,
             sessionId: 'mismatched-window-id',
-            windowId: 'does-not-match-the-window',
+            windowSeq: -1,
+        })],
+        ['initial cursor', (open: Record<string, unknown>) => ({
+            ...open,
+            sessionId: 'initial-cursor',
+            window: {
+                ...(open.window as Record<string, unknown>),
+                after: { ts: MDIP_EPOCH_SECONDS, id: hash('a') },
+            },
         })],
     ])('rejects an invalid framed neg_open %s', async (_case, makeInvalidMessage) => {
         const open = await createRemoteOpen();
@@ -865,17 +894,17 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it.each([
         ['neg_msg frame', (open: Record<string, unknown>) => ({
-            type: 'neg_msg', sessionId: open.sessionId, windowId: open.windowId,
+            type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq,
             frame: { encoding: 'unsupported', data: '' },
         })],
         ['ops_req IDs', (open: Record<string, unknown>) => ({
-            type: 'ops_req', sessionId: open.sessionId, windowId: open.windowId, ids: ['invalid'],
+            type: 'ops_req', sessionId: open.sessionId, windowSeq: open.windowSeq, ids: ['invalid'],
         })],
         ['ops_push page', (open: Record<string, unknown>) => ({
-            type: 'ops_push', sessionId: open.sessionId, windowId: open.windowId, data: 'invalid',
+            type: 'ops_push', sessionId: open.sessionId, windowSeq: open.windowSeq, data: 'invalid',
         })],
         ['neg_close progress', (open: Record<string, unknown>) => ({
-            type: 'neg_close', sessionId: open.sessionId, windowId: open.windowId,
+            type: 'neg_close', sessionId: open.sessionId, windowSeq: open.windowSeq,
             windowProgress: { cappedByRecords: 'true' },
         })],
     ])('rejects an invalid current %s', async (_case, makeInvalidMessage) => {
@@ -910,7 +939,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_push',
             sessionId: 'invented-session',
-            windowId: 'invented-window',
+            windowSeq: 'invented-window',
             round: 0,
             requestId: 0,
             page: 0,
@@ -943,9 +972,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 1,
             frame: { encoding: 'utf8', data: 'malformed-negentropy-frame' },
         }));
@@ -999,7 +1028,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect.objectContaining({
                 type: 'neg_close',
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 reason: 'ordered_catchup_active',
             }),
         ]);
@@ -1336,13 +1365,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
             expect(firstOpen).toMatchObject({
                 sessionId: expect.any(String),
-                windowId: expect.any(String),
+                windowSeq: expect.any(Number),
             });
 
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: firstOpen!.sessionId,
-                windowId: firstOpen!.windowId,
+                windowSeq: firstOpen!.windowSeq,
                 reason: 'ordered_catchup_active',
             }));
             await protocolNode.node.run(
@@ -1368,13 +1397,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         const firstOpen = decodeWrites(pair).find(message => message.type === 'neg_open');
         expect(firstOpen).toMatchObject({
             sessionId: expect.any(String),
-            windowId: expect.any(String),
+            windowSeq: expect.any(Number),
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'neg_close',
             sessionId: firstOpen!.sessionId,
-            windowId: firstOpen!.windowId,
+            windowSeq: firstOpen!.windowSeq,
             reason: 'ordered_catchup_active',
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
@@ -1408,7 +1437,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify({
                 type: 'ops_req',
                 sessionId: 'unknown-session',
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 round: 0,
                 requestId: 0,
                 ids: [hash('a')],
@@ -1417,9 +1446,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
             encodeFramedMessage(JSON.stringify({
-                type: 'neg_msg',
+                type: 'neg_msg', continuation: null,
                 sessionId: open.sessionId,
-                windowId: 'unrecognized-window',
+                windowSeq: 'unrecognized-window',
                 round: 1,
                 frame: 'invalid-frame-must-not-be-decoded',
             })),
@@ -1516,8 +1545,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         const writesBefore = pair.transcript.length;
         const importsBefore = protocolNode.node.gatekeeperClient.importBatch.mock.calls.length;
         for (const message of [
-            { type: 'neg_msg', sessionId: 'stale', windowId: open.windowId, frame: open.frame },
-            { type: 'neg_close', sessionId: 'stale', windowId: open.windowId, reason: 'complete' },
+            { type: 'neg_msg', continuation: null, sessionId: 'stale', windowSeq: open.windowSeq, frame: open.frame },
+            { type: 'neg_close', sessionId: 'stale', windowSeq: open.windowSeq, reason: 'complete' },
         ]) {
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.receiveMsg(peerKey, message),
@@ -1530,9 +1559,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'remote_closed',
         }));
         expect(protocolNode.node.run(
@@ -1552,7 +1581,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                 type: 'neg_close',
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 round: 1,
                 reason,
             }));
@@ -1611,10 +1640,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('offer-page'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('offer-page')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
         const lookupSizes: number[] = [];
@@ -1627,7 +1656,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -1643,7 +1672,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             page: 0,
@@ -1656,7 +1685,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             page: 0,
@@ -1688,16 +1717,16 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('offer-byte-pages'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('offer-byte-pages')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -1712,7 +1741,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             page: 0,
@@ -1728,7 +1757,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             page: 1,
@@ -1754,7 +1783,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'next-frame',
+                nextMsg: nativeFrame('next-frame'),
                 haveIds: [operation.signature!.hash],
                 needIds: [],
             });
@@ -1764,19 +1793,19 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('first-round'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('first-round')),
         }));
         expect(decodeWrites(pair).some(message => message.type === 'ops_offer')).toBe(true);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 2,
-            frame: encodeNegentropyFrame('early-next-round'),
+            frame: encodeNegentropyFrame(nativeFrame('early-next-round')),
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -1797,7 +1826,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'next-frame',
+                nextMsg: nativeFrame('next-frame'),
                 haveIds: [operation.signature!.hash],
                 needIds: [],
             });
@@ -1807,17 +1836,17 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('first-round'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('first-round')),
         }));
         expect(decodeWrites(pair).some(message => message.type === 'ops_offer')).toBe(true);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'max_rounds_reached',
         }));
 
@@ -1836,7 +1865,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile')
                 .mockResolvedValueOnce({
-                    nextMsg: 'next-frame',
+                    nextMsg: nativeFrame('next-frame'),
                     haveIds: [],
                     needIds: [operationId],
                 })
@@ -1852,17 +1881,17 @@ describe('hyperswarm mediator protocol characterization', () => {
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('first-round'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('first-round')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('second-round'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('second-round')),
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'ops_req')).toHaveLength(1);
@@ -1889,10 +1918,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('request-operation'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('request-operation')),
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
@@ -1916,7 +1945,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_push',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: open.round,
             requestId: 0,
             page: 0,
@@ -1948,10 +1977,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('wrong-request'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('wrong-request')),
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
@@ -2048,10 +2077,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('false-continuation'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('false-continuation')),
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
@@ -2082,10 +2111,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('missing-operation'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('missing-operation')),
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
@@ -2094,7 +2123,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'missing_requested_operations',
         }));
         expect(pair.connectionA.destroyed).toBe(false);
@@ -2128,17 +2157,17 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('deferred-offer'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('deferred-offer')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -2148,7 +2177,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair).some(message => message.type === 'ops_push')).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -2178,10 +2207,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('partial-deferred-offer'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('partial-deferred-offer')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
         const requestedId = (offer.ids as string[])[0];
@@ -2189,7 +2218,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -2203,14 +2232,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             page: 0,
         }));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'incomplete',
         }));
     });
@@ -2237,16 +2266,16 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('deferred-ack'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('deferred-ack')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -2257,7 +2286,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: push.round,
             requestId: push.requestId,
             page: push.page,
@@ -2265,7 +2294,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -2295,17 +2324,17 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey));
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('invalid-offer-subset'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('invalid-offer-subset')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: offer.round,
             requestId: 0,
             offerId: offer.offerId,
@@ -2333,7 +2362,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             offerId: 0,
             ids: [operation.signature!.hash],
         }));
@@ -2346,7 +2375,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             offerId: 1,
             ids: [operation.signature!.hash],
         }));
@@ -2366,13 +2395,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             offerId: 0,
             ids: [hash('a')],
         }));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'ops_offer_lookup_failed',
         }));
         expect(protocolNode.node.run(
@@ -2382,7 +2411,11 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('bounds cumulative offers within the active window', async () => {
         const operations = await makeOperations(2);
-        const open = await createRemoteOpen();
+        const remoteOpen = await createRemoteOpen();
+        const open: Record<string, unknown> = {
+            ...remoteOpen,
+            window: { ...(remoteOpen.window as object), limit: 1 },
+        };
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 1 });
         mockTerminalResponder(protocolNode);
         const { peerKey, pair } = attachPeer(protocolNode);
@@ -2391,7 +2424,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             offerId: 0,
             ids: [operations[0].signature!.hash],
         }));
@@ -2404,7 +2437,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             offerId: 1,
             ids: [operations[1].signature!.hash],
         }));
@@ -2416,7 +2449,11 @@ describe('hyperswarm mediator protocol characterization', () => {
 
     it('bounds cumulative direct requests within the active window', async () => {
         const operations = await makeOperations(2);
-        const open = await createRemoteOpen();
+        const remoteOpen = await createRemoteOpen();
+        const open: Record<string, unknown> = {
+            ...remoteOpen,
+            window: { ...(remoteOpen.window as object), limit: 1 },
+        };
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 1 });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
@@ -2430,7 +2467,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             requestId: 0,
             ids: [operations[0].signature!.hash],
         }));
@@ -2438,7 +2475,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             requestId: 0,
             page: firstPush.page,
         }));
@@ -2446,7 +2483,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             requestId: 1,
             ids: [operations[1].signature!.hash],
         }));
@@ -2465,7 +2502,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             requestId: 0,
             ids: [hash('a')],
         }));
@@ -2482,9 +2519,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         const { peerKey, pair } = attachPeer(protocolNode, { peerKeyByte: 0x22 });
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'incomplete',
         }));
 
@@ -2518,20 +2555,20 @@ describe('hyperswarm mediator protocol characterization', () => {
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: 'stale-window',
+            windowSeq: open.windowSeq,
             round: 0,
-            frame: { encoding: 'utf8', data: 'ignored-stale-frame' },
+            frame: encodeNegentropyFrame(nativeFrame('ignored-stale-frame')),
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 2,
             frame: open.frame,
         }));
@@ -2566,9 +2603,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerA.peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: openA.sessionId,
-            windowId: openA.windowId,
+            windowSeq: openA.windowSeq,
             reason: 'remote_closed',
         }));
         await protocolNode.node.run(
@@ -2622,9 +2659,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(firstOpen).toBeDefined();
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(first.peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: firstOpen.sessionId,
-            windowId: firstOpen.windowId,
+            windowSeq: firstOpen.windowSeq,
             reason: 'remote_closed',
         }));
         await eventually(() => decodeWrites(second.pair).some(message => message.type === 'neg_open'));
@@ -3042,10 +3079,10 @@ describe('hyperswarm mediator protocol characterization', () => {
                 throw new Error('expected local neg_open');
             }
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
-                type: 'neg_msg',
+                type: 'neg_msg', continuation: null,
                 sessionId: open.sessionId,
-                windowId: open.windowId,
-                frame: encodeNegentropyFrame('offer-operation'),
+                windowSeq: open.windowSeq,
+                frame: encodeNegentropyFrame(nativeFrame('offer-operation')),
             }));
             const offer = decodeWrites(initialPeer.pair).find(message => message.type === 'ops_offer');
             if (!offer) {
@@ -3074,7 +3111,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 {
                     type: 'ops_req',
                     sessionId: open.sessionId,
-                    windowId: open.windowId,
+                    windowSeq: open.windowSeq,
                     round: offer.round,
                     requestId: 0,
                     offerId: offer.offerId,
@@ -3136,10 +3173,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('offer-operation'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('offer-operation')),
         }));
         const offer = decodeWrites(initialPeer.pair).find(message => message.type === 'ops_offer');
         if (!offer) {
@@ -3160,7 +3197,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             {
                 type: 'ops_req',
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 round: offer.round,
                 requestId: 0,
                 offerId: offer.offerId,
@@ -3230,10 +3267,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('persistence-confirmation'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('persistence-confirmation')),
         }));
 
         let offset = 0;
@@ -3305,10 +3342,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('terminal-reject'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('terminal-reject')),
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
             peerKey,
@@ -3320,9 +3357,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(records.find(record => record.id === acceptedId)?.syncOrder).toBeUndefined();
         expect(records.find(record => record.id === rejectedId)?.syncOrder).toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
         expect(protocolNode.node.run(
@@ -3369,10 +3406,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('legacy-without-previd'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('legacy-without-previd')),
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
             peerKey,
@@ -3382,9 +3419,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect((await protocolNode.store.getByIds([operationId]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
     });
@@ -3441,10 +3478,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('normally-stored-terminal-candidate'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('normally-stored-terminal-candidate')),
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
             peerKey,
@@ -3454,9 +3491,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(operationLookups).toBe(3);
         expect((await getByIds([operationId]))[0].syncOrder).toBeUndefined();
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
         expect(protocolNode.node.run(
@@ -3503,18 +3540,18 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('modern-missing-predecessor'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('modern-missing-predecessor')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
         expect(await protocolNode.store.has(operationId)).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'unresolved_operations',
         }));
     });
@@ -3576,10 +3613,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('large-unresolved-operations'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('large-unresolved-operations')),
         }));
 
         for (const [page, operation] of operations.entries()) {
@@ -3593,9 +3630,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'unresolved_limit_exceeded',
         }));
         expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(4);
@@ -3659,10 +3696,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('many-unresolved-operations'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('many-unresolved-operations')),
         }));
 
         for (let offset = 0, page = 0; offset < 1_000; offset += 300, page += 1) {
@@ -3681,9 +3718,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'unresolved_limit_exceeded',
         }));
         expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(4);
@@ -3724,10 +3761,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('capacity-backpressure'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('capacity-backpressure')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
@@ -3739,9 +3776,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             deferred: true,
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -3758,7 +3795,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'next-frame',
+                nextMsg: nativeFrame('next-frame'),
                 haveIds: [],
                 needIds: [operationId],
             });
@@ -3780,25 +3817,25 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('capacity-before-round-cap'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('capacity-before-round-cap')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'max_rounds_reached',
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -3815,7 +3852,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'next-frame',
+                nextMsg: nativeFrame('next-frame'),
                 haveIds: [],
                 needIds: [operationId],
             });
@@ -3837,25 +3874,25 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('capacity-before-local-round-cap'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('capacity-before-local-round-cap')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 2,
-            frame: encodeNegentropyFrame('local-round-cap'),
+            frame: encodeNegentropyFrame(nativeFrame('local-round-cap')),
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -3883,9 +3920,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
 
@@ -3894,7 +3931,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             deferred: true,
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'incomplete',
         }));
         expect(protocolNode.node.run(
@@ -3944,10 +3981,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('capacity-backpressure-send-failure'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('capacity-backpressure-send-failure')),
         }));
         jest.spyOn(pair.connectionA, 'write').mockImplementation(() => {
             throw new Error('write failed');
@@ -4018,10 +4055,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('delayed-terminal-root'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('delayed-terminal-root')),
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...requestedOpsPush(pair, [root, child]),
@@ -4038,9 +4075,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(await protocolNode.store.has(triggerId)).toBe(true);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
     });
@@ -4085,18 +4122,18 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('non-terminal-reject'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('non-terminal-reject')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
 
         expect(await protocolNode.store.has(operationId)).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'unresolved_operations',
         }));
     });
@@ -4125,19 +4162,19 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('rejected-final-window'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('rejected-final-window')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [rejectedOperation]);
 
         expect((await protocolNode.store.getByIds([rejectedId]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
         expect(protocolNode.node.run(
@@ -4171,10 +4208,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('mismatched-operation-id'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('mismatched-operation-id')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [malformedOperation]);
 
@@ -4226,10 +4263,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected first neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: firstOpen.sessionId,
-            windowId: firstOpen.windowId,
-            frame: encodeNegentropyFrame('rejected-capped-window'),
+            windowSeq: firstOpen.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('rejected-capped-window')),
         }));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, firstOpen, [rejectedOperation]);
 
@@ -4237,34 +4274,36 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(opens).toHaveLength(2);
         expect(opens[1]).toMatchObject({
             sessionId: firstOpen.sessionId,
-            window: { order: 1, after: expect.any(Object) },
+            windowSeq: 1,
+            window: { after: expect.any(Object) },
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: opens[1].sessionId,
-            windowId: opens[1].windowId,
-            frame: encodeNegentropyFrame('second-capped-window'),
+            windowSeq: opens[1].windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('second-capped-window')),
         }));
 
         const finalOpen = decodeWrites(pair).filter(message => message.type === 'neg_open')[2];
         expect(finalOpen).toMatchObject({
             sessionId: firstOpen.sessionId,
-            window: { order: 2, after: expect.any(Object) },
+            windowSeq: 2,
+            window: { after: expect.any(Object) },
         });
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: finalOpen.sessionId,
-            windowId: finalOpen.windowId,
-            frame: encodeNegentropyFrame('final-window-after-terminal-reject'),
+            windowSeq: finalOpen.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('final-window-after-terminal-reject')),
         }));
 
         expect((await protocolNode.store.getByIds([rejectedId]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: firstOpen.sessionId,
-            windowId: finalOpen.windowId,
+            windowSeq: finalOpen.windowSeq,
             reason: 'complete',
         }));
         expect(protocolNode.node.run(
@@ -4299,10 +4338,10 @@ describe('hyperswarm mediator protocol characterization', () => {
                 }
                 completedWindows += 1;
                 await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-                    type: 'neg_msg',
+                    type: 'neg_msg', continuation: null,
                     sessionId: open.sessionId,
-                    windowId: open.windowId,
-                    frame: encodeNegentropyFrame(`complete-window-${completedWindows}`),
+                    windowSeq: open.windowSeq,
+                    frame: encodeNegentropyFrame(nativeFrame(`complete-window-${completedWindows}`)),
                 }));
             }
             return completedWindows;
@@ -4361,10 +4400,11 @@ describe('hyperswarm mediator protocol characterization', () => {
                 await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                     type: 'neg_open',
                     sessionId,
-                    windowId: makeWindowId(window),
-                    window,
+                    windowSeq: window.order,
+                    window: wireWindow(window),
                     round,
-                    frame: encodeNegentropyFrame(`${sessionId}-${window.order}`),
+                    frame: encodeNegentropyFrame(nativeFrame(`${sessionId}-${window.order}`)),
+                    ...(round === 0 ? {} : { previousContinuation: window.after ?? null }),
                 }));
             }
             const lastWindow = selected.at(-1);
@@ -4372,7 +4412,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                     type: 'neg_close',
                     sessionId,
-                    windowId: makeWindowId(lastWindow),
+                    windowSeq: lastWindow.order,
                     reason: 'complete',
                 }));
             }
@@ -4382,15 +4422,15 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(buildSnapshot).toHaveBeenCalledTimes(7);
 
         await sendWindows('canonical-second');
-        expect(buildSnapshot).toHaveBeenCalledTimes(8);
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
 
         const arbitraryWindow = { ...windows[0], order: 100 };
         await sendWindows('arbitrary-first', [arbitraryWindow]);
         await sendWindows('arbitrary-second', [arbitraryWindow]);
-        expect(buildSnapshot).toHaveBeenCalledTimes(10);
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
 
         await sendWindows('canonical-third');
-        expect(buildSnapshot).toHaveBeenCalledTimes(11);
+        expect(buildSnapshot).toHaveBeenCalledTimes(7);
     });
 
     it('closes a session when sending neg_open throws', async () => {
@@ -4448,9 +4488,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
                 encodeFramedMessage(JSON.stringify({
-                    type: 'neg_msg',
+                    type: 'neg_msg', continuation: null,
                     sessionId: open.sessionId,
-                    windowId: open.windowId,
+                    windowSeq: open.windowSeq,
                     round: 1,
                     frame: encodeNegentropyFrame(peerOutcome.nextMsg!),
                 })),
@@ -4481,7 +4521,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const attemptedChunk = write.mock.calls[0]?.[0] as Uint8Array;
         expect(JSON.parse(
             decodeFramedMessages(Buffer.from(attemptedChunk)).messages[0].toString('utf8'),
-        )).toMatchObject({ type: 'neg_msg', sessionId: open.sessionId });
+        )).toMatchObject({ type: 'neg_msg', continuation: null, sessionId: open.sessionId });
         await expectFailedNegentropySessionCanRetry(protocolNode, peerKey, open.sessionId);
     });
 
@@ -4512,10 +4552,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
-            frame: encodeNegentropyFrame('offer-for-failed-push'),
+            windowSeq: open.windowSeq,
+            frame: encodeNegentropyFrame(nativeFrame('offer-for-failed-push')),
         }));
         const offer = decodeWrites(pair).find(message => message.type === 'ops_offer')!;
         const write = jest.spyOn(pair.connectionA, 'write').mockImplementationOnce(() => {
@@ -4527,7 +4567,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify({
                 type: 'ops_req',
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 round: offer.round,
                 requestId: 0,
                 offerId: offer.offerId,
@@ -4684,9 +4724,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             await countStarted;
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, remoteOpen));
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: remoteOpen.sessionId,
-                windowId: remoteOpen.windowId,
+                windowSeq: remoteOpen.windowSeq,
                 reason: 'complete',
             }));
             const engineCount = createEngine.mock.calls.length;
@@ -4756,7 +4796,11 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it('does not start ordered catch-up when an older store count resumes after completion', async () => {
-        const remoteOpen = await createRemoteOpen();
+        const remoteOpenFixture = await createRemoteOpen();
+        const remoteOpen: Record<string, unknown> = {
+            ...remoteOpenFixture,
+            window: { ...(remoteOpenFixture.window as object), limit: 4 },
+        };
         const protocolNode = await createNode({
             maxRecords: 4,
         });
@@ -4790,9 +4834,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             await countStarted;
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, remoteOpen));
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: remoteOpen.sessionId,
-                windowId: remoteOpen.windowId,
+                windowSeq: remoteOpen.windowSeq,
                 reason: 'complete',
             }));
             releaseCount();
@@ -4861,7 +4905,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
-                    windowId: remoteOpen.windowId,
+                    windowSeq: remoteOpen.windowSeq,
                     reason: 'ordered_catchup_active',
                 }),
             ]);
@@ -4897,7 +4941,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'continue',
+                nextMsg: nativeFrame('continue'),
                 haveIds: [],
                 needIds: [],
             });
@@ -4913,18 +4957,18 @@ describe('hyperswarm mediator protocol characterization', () => {
             throw new Error('expected local neg_open');
         }
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 1,
-            frame: encodeNegentropyFrame('first-round'),
+            frame: encodeNegentropyFrame(nativeFrame('first-round')),
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 2,
-            frame: encodeNegentropyFrame('second-round'),
+            frame: encodeNegentropyFrame(nativeFrame('second-round')),
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'neg_close').at(-1)).toMatchObject({
@@ -4949,9 +4993,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
             encodeFramedMessage(JSON.stringify({
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 reason: 'max_rounds_reached',
             })),
         ));
@@ -4982,9 +5026,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
             encodeFramedMessage(JSON.stringify({
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 round: 1,
                 reason: 'complete',
             })),
@@ -5012,7 +5056,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'continue',
+                nextMsg: nativeFrame('continue'),
                 haveIds: [],
                 needIds: [],
             });
@@ -5021,9 +5065,9 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
 
@@ -5047,7 +5091,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'continue',
+                nextMsg: nativeFrame('continue'),
                 haveIds: [],
                 needIds: [],
             });
@@ -5056,14 +5100,15 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         const continuationWindow = {
-            ...(open.window as ReconciliationWindow),
+            ...reconciliationWindow(open),
             order: 1,
         };
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...open,
-            windowId: makeWindowId(continuationWindow),
+            windowSeq: continuationWindow.order,
             round: 1,
-            window: continuationWindow,
+            window: wireWindow(continuationWindow),
+            previousContinuation: null,
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -5086,7 +5131,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'continue',
+                nextMsg: nativeFrame('continue'),
                 haveIds: [],
                 needIds: [],
             });
@@ -5097,7 +5142,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 1,
             requestId: 0,
             ids: [operation.signature!.hash],
@@ -5106,14 +5151,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 1,
             requestId: 0,
             page: push.page,
         }));
 
         const continuationWindow = buildNextHistoryPage(
-            open.window as ReconciliationWindow,
+            reconciliationWindow(open),
             {
                 ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 id: operation.signature!.hash,
@@ -5122,9 +5167,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...open,
-            windowId: makeWindowId(continuationWindow),
+            windowSeq: continuationWindow.order,
             round: 1,
-            window: continuationWindow,
+            window: wireWindow(continuationWindow),
+            previousContinuation: null,
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -5141,7 +5187,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementationOnce(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce({
-                nextMsg: 'continue',
+                nextMsg: nativeFrame('continue'),
                 haveIds: [],
                 needIds: [],
             });
@@ -5149,12 +5195,13 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
-        const splitWindow = buildRoundCapSplitWindow(open.window as ReconciliationWindow)!;
+        const splitWindow = buildRoundCapSplitWindow(reconciliationWindow(open))!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...open,
-            windowId: makeWindowId(splitWindow),
+            windowSeq: splitWindow.order,
             round: 1,
-            window: splitWindow,
+            window: wireWindow(splitWindow),
+            previousContinuation: null,
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -5172,30 +5219,31 @@ describe('hyperswarm mediator protocol characterization', () => {
         jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
             const engine = createEngine(snapshot);
             jest.spyOn(engine, 'reconcile').mockResolvedValueOnce(window++ === 0
-                ? { nextMsg: 'continue', haveIds: [], needIds: [] }
+                ? { nextMsg: nativeFrame('continue'), haveIds: [], needIds: [] }
                 : { nextMsg: null, haveIds: [], needIds: [] });
             return engine;
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_msg',
+            type: 'neg_msg', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             round: 1,
-            frame: encodeNegentropyFrame('round-cap'),
+            frame: encodeNegentropyFrame(nativeFrame('round-cap')),
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'max_rounds_reached',
         }));
 
-        const splitWindow = buildRoundCapSplitWindow(open.window as ReconciliationWindow)!;
+        const splitWindow = buildRoundCapSplitWindow(reconciliationWindow(open))!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...open,
-            windowId: makeWindowId(splitWindow),
+            windowSeq: splitWindow.order,
             round: 1,
-            window: splitWindow,
+            window: wireWindow(splitWindow),
+            previousContinuation: null,
         }));
 
         expect(pair.connectionA.destroyed).toBe(false);
@@ -5212,14 +5260,15 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         const continuationWindow = {
-            ...(open.window as ReconciliationWindow),
+            ...reconciliationWindow(open),
             order: 1,
         };
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             ...open,
-            windowId: makeWindowId(continuationWindow),
+            windowSeq: continuationWindow.order,
             round: 1,
-            window: continuationWindow,
+            window: wireWindow(continuationWindow),
+            previousContinuation: null,
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -5254,9 +5303,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
 
@@ -5277,7 +5326,11 @@ describe('hyperswarm mediator protocol characterization', () => {
         const [rejectedOperation] = await makeOperations(1);
         const fillerOperations = await makeOperations(2);
         const rejectedId = rejectedOperation.signature!.hash;
-        const open = await createRemoteOpen();
+        const remoteOpenFixture = await createRemoteOpen();
+        const open: Record<string, unknown> = {
+            ...remoteOpenFixture,
+            window: { ...(remoteOpenFixture.window as object), limit: 1 },
+        };
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 1 });
         const fillerRecords = fillerOperations.map(operation => {
             const mapped = mapOperationToSyncKey(operation);
@@ -5305,28 +5358,27 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [rejectedOperation]);
 
-        const remoteOpen = open as any;
         const continuationWindow = {
-            ...remoteOpen.window,
-            order: Number(remoteOpen.window.order) + 1,
+            ...(open.window as Record<string, unknown>),
             after: {
                 ts: fillerRecords[0].ts,
                 id: fillerRecords[0].id,
             },
         };
         const continuation = {
-            ...remoteOpen,
-            windowId: makeWindowId(continuationWindow),
+            ...open,
+            windowSeq: 1,
             round: 1,
             window: continuationWindow,
+            previousContinuation: null,
         };
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(peerKey, continuation),
         );
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: continuation.windowId,
+            windowSeq: continuation.windowSeq,
             reason: 'complete',
         }));
 
@@ -5378,9 +5430,9 @@ describe('hyperswarm mediator protocol characterization', () => {
             operation,
         }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'complete',
         }));
 
@@ -5465,9 +5517,9 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const closing = protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(initialPeer.peerKey, {
-                type: 'neg_close',
+                type: 'neg_close', continuation: null,
                 sessionId: open.sessionId,
-                windowId: open.windowId,
+                windowSeq: open.windowSeq,
                 reason: 'complete',
             }),
         );
@@ -5726,9 +5778,9 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         const open = decodeWrites(pair).find(message => message.type === 'neg_open')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
-            windowId: open.windowId,
+            windowSeq: open.windowSeq,
             reason: 'gatekeeper_backpressure',
         }));
 
@@ -6469,7 +6521,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
-                    windowId: remoteOpen.windowId,
+                    windowSeq: remoteOpen.windowSeq,
                     reason: 'ordered_catchup_active',
                 }),
             ]);
@@ -6492,7 +6544,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
-                    windowId: remoteOpen.windowId,
+                    windowSeq: remoteOpen.windowSeq,
                     reason: 'ordered_catchup_active',
                 }),
             ]);

@@ -17,7 +17,6 @@ import NegentropyAdapter, {
     type ReconciliationWindow,
 } from './negentropy/adapter.js';
 import {
-    NEG_SYNC_ID_RE,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
     normalizeNegentropyIds,
@@ -53,8 +52,9 @@ import {
     cloneWindow,
     cloneWindowSnapshot,
     cloneWindowStats,
-    makeWindowId,
+    makeWindowKey,
     MDIP_EPOCH_SECONDS,
+    sameWindow,
     windowLabel,
 } from './negentropy/windows.js';
 import { mapOperationToSyncKey } from './sync-mapping.js';
@@ -117,7 +117,7 @@ interface PeerSyncSession {
     initiator: boolean;
     windows: ReconciliationWindow[];
     windowIndex: number;
-    windowId: string | null;
+    windowSeq: number | null;
     advertisedWindow: ReconciliationWindow | null;
     currentWindowStats: NegentropyWindowStats | null;
     currentWindowSnapshot: NegentropyWindowSnapshot | null;
@@ -141,8 +141,7 @@ interface PeerSyncSession {
     receivedPushMaxCursor: SyncStoreCursor | null;
     sentPushMaxCursor: SyncStoreCursor | null;
     sentPushCount: number;
-    remoteWindowCappedByRecords: boolean;
-    remoteWindowLastCursor: SyncStoreCursor | null;
+    remoteContinuation: SyncStoreCursor | null | undefined;
     nextOfferId: number;
     nextRequestId: number;
     nextRemoteOfferId: number;
@@ -167,7 +166,6 @@ interface PeerSyncSession {
 
 interface NegentropyCoordinatorOptions {
     wireVersion: number;
-    frameSizeLimit: number;
     maxRecordsPerWindow: number;
     maxRoundsPerSession: number;
     maxIdsPerRequest: number;
@@ -212,7 +210,7 @@ interface CachedWindowSnapshot {
 interface WindowSnapshotBuild {
     attempt: number;
     changeSeq: number;
-    windowId: string;
+    windowKey: string;
     snapshot: NegentropyWindowSnapshot;
 }
 
@@ -277,7 +275,7 @@ function createSessionState(
         initiator,
         windows: [],
         windowIndex: 0,
-        windowId: null,
+        windowSeq: null,
         advertisedWindow: null,
         currentWindowStats: null,
         currentWindowSnapshot: null,
@@ -300,8 +298,7 @@ function createSessionState(
         receivedPushMaxCursor: null,
         sentPushMaxCursor: null,
         sentPushCount: 0,
-        remoteWindowCappedByRecords: false,
-        remoteWindowLastCursor: null,
+        remoteContinuation: undefined,
         nextOfferId: 0,
         nextRequestId: 0,
         nextRemoteOfferId: 0,
@@ -347,7 +344,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             maxIdsPerRequest: options.maxIdsPerRequest,
             maxOpsPerPush: options.maxOpsPerPush,
             maxBytesPerPush: options.maxBytesPerPush,
-            maxFrameBytes: options.frameSizeLimit,
             maxRecordsPerWindow: MAX_NEGENTROPY_WINDOW_RECORDS,
         });
         if (result.ok) {
@@ -416,7 +412,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (options.sendToPeer(peerKey, {
             ...options.createBaseMessage('neg_close'),
             sessionId: msg.sessionId,
-            windowId: msg.windowId,
+            windowSeq: msg.windowSeq,
             round: msg.round,
             reason: 'sync_busy',
         })) {
@@ -674,11 +670,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     function initializeSessionWindowState(
         session: PeerSyncSession,
         window: ReconciliationWindow,
-        windowId: string,
+        windowSeq: number,
         windowStats: NegentropyWindowStats,
         advertisedWindow = window,
     ): void {
-        session.windowId = windowId;
+        session.windowSeq = windowSeq;
         session.advertisedWindow = cloneWindow(advertisedWindow);
         session.pendingHaveIds = new Set<string>();
         session.pendingNeedIds = new Set<string>();
@@ -690,8 +686,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         session.receivedPushMaxCursor = null;
         session.sentPushMaxCursor = null;
         session.sentPushCount = 0;
-        session.remoteWindowCappedByRecords = false;
-        session.remoteWindowLastCursor = null;
+        session.remoteContinuation = undefined;
         session.currentWindowSnapshot = null;
         session.currentWindowEngine = null;
         session.currentWindowStats = {
@@ -813,7 +808,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         reason: string,
         retention: WindowSnapshotRetention = 'none',
     ): Promise<NegentropyWindowSnapshot> {
-        const targetWindowId = makeWindowId(window);
+        const targetWindowKey = makeWindowKey(window);
         const maxTargetBuildAttempts = reason.startsWith('background_') ? 1 : 2;
         let targetBuildAttempts = 0;
 
@@ -836,7 +831,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
             if (rebuildPromise) {
                 const completedBuild = await rebuildPromise;
-                if (completedBuild.windowId === targetWindowId) {
+                if (completedBuild.windowKey === targetWindowKey) {
                     targetBuildAttempts = Math.max(targetBuildAttempts, completedBuild.attempt);
                 }
                 if (shutdownStarted) {
@@ -848,7 +843,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 }
                 if (storeMutationsInFlight === 0
                     && completedBuild.changeSeq === adapterChangeSeq
-                    && completedBuild.windowId === targetWindowId) {
+                    && completedBuild.windowKey === targetWindowKey) {
                     adapterBuiltSeq = completedBuild.changeSeq;
                     retainWindowSnapshot(
                         window,
@@ -880,7 +875,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                         reason,
                         durationMs: adapterBuiltAt - rebuildStartedAt,
                         adapterBuiltAt,
-                        windowId: targetWindowId,
+                        windowKey: targetWindowKey,
                         window: windowLabel(window),
                         dirtyAfterRebuild: storeMutationsInFlight > 0
                             || rebuildStartSeq !== adapterChangeSeq,
@@ -890,7 +885,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return {
                     attempt,
                     changeSeq: rebuildStartSeq,
-                    windowId: targetWindowId,
+                    windowKey: targetWindowKey,
                     snapshot,
                 };
             })();
@@ -930,13 +925,15 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             throw new Error(`missing reconciliation window at index ${session.windowIndex}`);
         }
 
-        const windowId = makeWindowId(window);
-        const previousWindowProgress = buildWindowProgress(session);
+        const windowSeq = window.order;
+        const previousContinuation = session.windowSeq === null
+            ? undefined
+            : buildWindowContinuation(session);
         const snapshot = await ensureWindowAdapterFresh(window, 'session_open_initiator', 'historical');
         if (peerSessions.get(peerKey) !== session) {
             return;
         }
-        initializeSessionWindowState(session, window, windowId, cloneWindowStats(snapshot.stats)!);
+        initializeSessionWindowState(session, window, windowSeq, cloneWindowStats(snapshot.stats)!);
         session.currentWindowSnapshot = snapshot;
         session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
         const firstFrame = await session.currentWindowEngine.initiate();
@@ -946,13 +943,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const msg: NegOpenMessage = {
             ...options.createBaseMessage('neg_open'),
             sessionId: session.sessionId,
-            windowId,
+            windowSeq,
             window: {
-                name: window.name,
-                fromTs: window.fromTs,
-                toTs: window.toTs,
-                maxRecords: window.maxRecords,
-                order: window.order,
+                until: window.toTs,
+                limit: window.maxRecords,
                 after: window.after
                     ? {
                         ts: window.after.ts,
@@ -962,7 +956,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             },
             round: session.rounds,
             frame: encodeNegentropyFrame(firstFrame),
-            previousWindowProgress,
+            ...(previousContinuation === undefined ? {} : { previousContinuation }),
         };
 
         if (!options.sendToPeer(peerKey, msg)) {
@@ -974,74 +968,45 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             {
                 peer: shortName(peerKey),
                 sessionId: session.sessionId,
-                windowId,
+                windowSeq,
                 window: windowLabel(window),
             },
             'negentropy window open sent'
         );
     }
 
-    function buildWindowProgress(session: PeerSyncSession): NegMsgMessage['windowProgress'] | undefined {
+    function buildWindowContinuation(session: PeerSyncSession): NegMsgMessage['continuation'] | undefined {
         const stats = session.currentWindowStats;
         if (!stats) {
             return undefined;
         }
-
-        return {
-            cappedByRecords: stats.cappedByRecords,
-            lastCursor: stats.lastCursor
-                ? {
-                    ts: stats.lastCursor.ts,
-                    id: stats.lastCursor.id,
-                }
-                : undefined,
-        };
-    }
-
-    function parseWindowProgress(raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress']): {
-        cappedByRecords: boolean;
-        lastCursor: SyncStoreCursor | null;
-    } | null {
-        if (!raw || typeof raw !== 'object') {
+        if (!stats.cappedByRecords) {
             return null;
         }
-
-        const cappedByRecords = raw.cappedByRecords === true;
-        const lastCursor = raw.lastCursor;
-
-        if (!lastCursor) {
-            return {
-                cappedByRecords,
-                lastCursor: null,
-            };
+        if (!stats.lastCursor) {
+            throw new Error(`record-capped session ${session.sessionId} has no continuation cursor`);
         }
-
-        const ts = Number(lastCursor.ts);
-        const id = String(lastCursor.id ?? '').toLowerCase();
-        if (!Number.isInteger(ts) || !NEG_SYNC_ID_RE.test(id)) {
-            return null;
-        }
-
-        return {
-            cappedByRecords,
-            lastCursor: {
-                ts,
-                id,
-            },
-        };
+        return cloneCursor(stats.lastCursor);
     }
 
-    function trackRemoteWindowProgress(
+    function sameContinuation(
+        left: SyncStoreCursor | null | undefined,
+        right: SyncStoreCursor | null,
+    ): boolean {
+        return left === undefined
+            || left === null && right === null
+            || !!left && !!right && left.ts === right.ts && left.id === right.id;
+    }
+
+    function trackRemoteContinuation(
         session: PeerSyncSession,
-        raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress'],
-    ): void {
-        const progress = parseWindowProgress(raw);
-        if (!progress) {
-            return;
+        continuation: SyncStoreCursor | null,
+    ): boolean {
+        if (!sameContinuation(session.remoteContinuation, continuation)) {
+            return false;
         }
-
-        session.remoteWindowCappedByRecords = progress.cappedByRecords;
-        session.remoteWindowLastCursor = cloneCursor(progress.lastCursor);
+        session.remoteContinuation = cloneCursor(continuation);
+        return true;
     }
 
     function getNextWindowOrder(session: PeerSyncSession): number {
@@ -1079,8 +1044,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const localStats = session.currentWindowStats;
         const localCappedByRecords = localStats?.cappedByRecords === true;
         const localLastCursor = cloneCursor(localStats?.lastCursor);
-        const remoteCappedByRecords = session.remoteWindowCappedByRecords;
-        const remoteLastCursor = cloneCursor(session.remoteWindowLastCursor);
+        const remoteCappedByRecords = session.remoteContinuation !== undefined
+            && session.remoteContinuation !== null;
+        const remoteLastCursor = cloneCursor(session.remoteContinuation);
         const receivedPushCount = session.receivedPushIds.size;
         const receivedKnownPushCount = session.receivedKnownPushIds.size;
         const receivedPushMaxCursor = cloneCursor(session.receivedPushMaxCursor);
@@ -1163,14 +1129,14 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         return true;
     }
 
-    function getExpectedWindowId(session: PeerSyncSession): string {
-        if (!session.windowId) {
+    function getExpectedWindowSeq(session: PeerSyncSession): number {
+        if (session.windowSeq === null) {
             throw new Error(`session ${session.sessionId} has no active window`);
         }
-        return session.windowId;
+        return session.windowSeq;
     }
 
-    function isAuthorizedNextWindow(session: PeerSyncSession, windowId: string): boolean {
+    function isAuthorizedNextWindow(session: PeerSyncSession, candidate: ReconciliationWindow): boolean {
         const currentWindow = session.advertisedWindow;
         if (!currentWindow || session.windowIncomplete
             || session.activeOffer || session.localRequest || session.receivedRequest) {
@@ -1181,14 +1147,14 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const reachedRoundCap = session.currentWindowStats?.cappedByRounds === true
             || (session.currentWindowStats?.rounds ?? 0) >= session.maxRounds;
         if (!session.reconciliationComplete && reachedRoundCap
-            && splitWindow && makeWindowId(splitWindow) === windowId) {
+            && splitWindow && sameWindow(splitWindow, candidate)) {
             return true;
         }
 
         const cursor = getSessionContinuationDecision(session).chosenCursor;
         if (cursor) {
             const continuation = buildNextHistoryPage(currentWindow, cursor, getNextWindowOrder(session));
-            if (makeWindowId(continuation) === windowId) {
+            if (sameWindow(continuation, candidate)) {
                 return true;
             }
         }
@@ -1197,7 +1163,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         // operation. In a capped window, accept the cursor this node demonstrably served even
         // when that asymmetric transfer contained fewer than a complete page.
         const asymmetricCappedPage = session.currentWindowStats?.cappedByRecords === true
-            && session.remoteWindowCappedByRecords;
+            && session.remoteContinuation !== undefined
+            && session.remoteContinuation !== null;
         if ((!completeServedPage && !asymmetricCappedPage)
             || !session.sentPushMaxCursor
             || (currentWindow.after && compareSyncCursor(session.sentPushMaxCursor, currentWindow.after) <= 0)) {
@@ -1208,19 +1175,19 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             session.sentPushMaxCursor,
             getNextWindowOrder(session),
         );
-        return makeWindowId(sentContinuation) === windowId;
+        return sameWindow(sentContinuation, candidate);
     }
 
-    function isCurrentSessionWindow(peerKey: string, session: PeerSyncSession, windowId: string, msgType: string): boolean {
-        if (!session.windowId || windowId !== session.windowId) {
+    function isCurrentSessionWindow(peerKey: string, session: PeerSyncSession, windowSeq: number, msgType: string): boolean {
+        if (session.windowSeq === null || windowSeq !== session.windowSeq) {
             reportProtocolViolation(peerKey, `${msgType} is for an unrecognized window`);
             log.warn(
                 {
                     peer: shortName(peerKey),
                     sessionId: session.sessionId,
                     msgType,
-                    expectedWindowId: session.windowId,
-                    receivedWindowId: windowId,
+                    expectedWindowSeq: session.windowSeq,
+                    receivedWindowSeq: windowSeq,
                 },
                 'ignoring negentropy message for non-current window'
             );
@@ -1263,7 +1230,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const msg: OpsReqMessage = {
             ...options.createBaseMessage('ops_req'),
             sessionId: session.sessionId,
-            windowId: getExpectedWindowId(session),
+            windowSeq: getExpectedWindowSeq(session),
             round: session.rounds,
             requestId,
             ...(settings.offerId === undefined ? {} : { offerId: settings.offerId }),
@@ -1294,7 +1261,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         const msg: OpsOfferMessage = {
             ...options.createBaseMessage('ops_offer'),
             sessionId: session.sessionId,
-            windowId: getExpectedWindowId(session),
+            windowSeq: getExpectedWindowSeq(session),
             round: session.rounds,
             offerId,
             ids,
@@ -1377,7 +1344,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 const msg: OpsPushMessage = {
                     ...options.createBaseMessage('ops_push'),
                     sessionId: session.sessionId,
-                    windowId: getExpectedWindowId(session),
+                    windowSeq: getExpectedWindowSeq(session),
                     round: request.round,
                     requestId: request.requestId,
                     page: request.page,
@@ -1404,14 +1371,18 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         });
     }
 
-    function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: string | Uint8Array): boolean {
+    function sendNegMsg(peerKey: string, session: PeerSyncSession, frame: Uint8Array): boolean {
+        const continuation = buildWindowContinuation(session);
+        if (continuation === undefined) {
+            throw new Error(`session ${session.sessionId} has no active window continuation`);
+        }
         const msg: NegMsgMessage = {
             ...options.createBaseMessage('neg_msg'),
             sessionId: session.sessionId,
-            windowId: getExpectedWindowId(session),
+            windowSeq: getExpectedWindowSeq(session),
             round: session.rounds,
             frame: encodeNegentropyFrame(frame),
-            windowProgress: buildWindowProgress(session),
+            continuation,
         };
 
         return options.sendToPeer(peerKey, msg);
@@ -1421,16 +1392,17 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         peerKey: string,
         session: PeerSyncSession,
         reason: string,
-        windowId = session.windowId ?? 'none',
+        windowSeq = session.windowSeq ?? 0,
     ): boolean {
         session.localClosed = true;
+        const continuation = buildWindowContinuation(session);
         const closeMsg: NegCloseMessage = {
             ...options.createBaseMessage('neg_close'),
             sessionId: session.sessionId,
-            windowId,
+            windowSeq,
             round: session.rounds,
             reason,
-            windowProgress: buildWindowProgress(session),
+            ...(continuation === undefined ? {} : { continuation }),
         };
 
         return options.sendToPeer(peerKey, closeMsg);
@@ -1779,7 +1751,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 {
                     peer: shortName(peerKey),
                     sessionId: session.sessionId,
-                    windowId: session.windowId,
+                    windowSeq: session.windowSeq,
                     windowName: completedWindow.windowName,
                     loaded: completedWindow.loaded,
                     skipped: completedWindow.skipped,
@@ -1803,7 +1775,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     async function handleNegentropyRoundAsInitiator(
         peerKey: string,
         session: PeerSyncSession,
-        frame: string | Uint8Array,
+        frame: Uint8Array,
     ): Promise<void> {
         const outcome = await reconcileNegentropyFrame(peerKey, session, frame);
         if (!outcome) {
@@ -1849,7 +1821,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     async function handleNegentropyRoundAsResponder(
         peerKey: string,
         session: PeerSyncSession,
-        frame: string | Uint8Array,
+        frame: Uint8Array,
     ): Promise<void> {
         const outcome = await reconcileNegentropyFrame(peerKey, session, frame);
         if (!outcome) {
@@ -1884,7 +1856,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 {
                     peer: shortName(peerKey),
                     sessionId: session.sessionId,
-                    windowId: session.windowId,
+                    windowSeq: session.windowSeq,
                     windowName: completedWindow.windowName,
                     loaded: completedWindow.loaded,
                     skipped: completedWindow.skipped,
@@ -1933,14 +1905,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
         if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive
             || !options.importPipeline.available) {
-            const remoteWindowId = typeof msg.windowId === 'string' ? msg.windowId : '';
+            const remoteWindowSeq = msg.windowSeq;
             const rejectionSent = remoteSessionId.length > 0
-                && remoteWindowId.length > 0
                 && supportsPeerTransport(conn)
                 && options.sendToPeer(peerKey, {
                     ...options.createBaseMessage('neg_close'),
                     sessionId: remoteSessionId,
-                    windowId: remoteWindowId,
+                    windowSeq: remoteWindowSeq,
                     round: Number.isInteger(msg.round) ? msg.round : 0,
                     reason: options.importPipeline.available ? 'ordered_catchup_active' : 'gatekeeper_processing_unavailable',
                 });
@@ -1985,7 +1956,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 reportProtocolViolation(peerKey, 'neg_open conflicts with the local initiator role');
                 return;
             }
-            if (session.windowId === msg.windowId) {
+            if (session.windowSeq === msg.windowSeq) {
                 reportProtocolViolation(peerKey, 'neg_open reopens the active window');
                 return;
             }
@@ -1994,33 +1965,33 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
 
-        const window = parseRemoteWindow(msg.window, options.maxRecordsPerWindow);
+        const hasPreviousContinuation = Object.prototype.hasOwnProperty.call(msg, 'previousContinuation');
+        const window = parseRemoteWindow(msg.window, msg.windowSeq);
         if (!window) {
             log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, 'ignoring neg_open with invalid window');
             return;
         }
-        const advertisedWindowId = makeWindowId({
-            name: msg.window.name,
-            fromTs: msg.window.fromTs,
-            toTs: msg.window.toTs,
-            maxRecords: msg.window.maxRecords,
-            order: msg.window.order,
-            after: msg.window.after,
-        });
-        if (advertisedWindowId !== msg.windowId) {
-            reportProtocolViolation(peerKey, 'neg_open windowId does not match its window');
-            return;
-        }
         if (session?.sessionId === msg.sessionId) {
-            const previousRemoteCappedByRecords = session.remoteWindowCappedByRecords;
-            const previousRemoteLastCursor = cloneCursor(session.remoteWindowLastCursor);
-            trackRemoteWindowProgress(session, msg.previousWindowProgress);
-            if (!isAuthorizedNextWindow(session, msg.windowId)) {
-                session.remoteWindowCappedByRecords = previousRemoteCappedByRecords;
-                session.remoteWindowLastCursor = previousRemoteLastCursor;
+            if (!hasPreviousContinuation) {
+                reportProtocolViolation(peerKey, 'continued neg_open is missing previousContinuation');
+                return;
+            }
+            const previousRemoteContinuation = session.remoteContinuation === undefined
+                ? undefined
+                : cloneCursor(session.remoteContinuation);
+            if (!trackRemoteContinuation(session, msg.previousContinuation!)) {
+                reportProtocolViolation(peerKey, 'neg_open changes the previous window continuation');
+                return;
+            }
+            if (!isAuthorizedNextWindow(session, window)) {
+                session.remoteContinuation = previousRemoteContinuation;
                 reportProtocolViolation(peerKey, 'neg_open is not an authorized continuation');
                 return;
             }
+        }
+        else if (msg.windowSeq !== 0 || hasPreviousContinuation || window.after) {
+            reportProtocolViolation(peerKey, 'initial neg_open must use windowSeq 0 without continuation or cursor');
+            return;
         }
         if (conflictDecision.action === 'replace' && session) {
             closePeerSession(peerKey, 'replaced_by_remote_open');
@@ -2061,9 +2032,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             initializeSessionWindowState(
                 session,
                 window,
-                msg.windowId,
+                msg.windowSeq,
                 cloneWindowStats(snapshot.stats)!,
-                msg.window,
+                window,
             );
             session.currentWindowSnapshot = snapshot;
             session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
@@ -2075,7 +2046,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 const reason = error instanceof SnapshotContentionError
                     ? 'snapshot_busy'
                     : 'snapshot_build_failed';
-                sendNegClose(peerKey, session, reason, msg.windowId);
+                sendNegClose(peerKey, session, reason, msg.windowSeq);
                 closePeerSession(peerKey, reason);
             }
             if (error instanceof SnapshotContentionError) {
@@ -2099,7 +2070,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!isExpectedRound(peerKey, msg.round, expectedRound, 'neg_msg')) {
             return;
         }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_msg')) {
+        if (!isCurrentSessionWindow(peerKey, session, msg.windowSeq, 'neg_msg')) {
             return;
         }
         if (session.activeOffer || session.localRequest || session.receivedRequest) {
@@ -2107,7 +2078,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
 
-        trackRemoteWindowProgress(session, msg.windowProgress);
+        if (!trackRemoteContinuation(session, msg.continuation)) {
+            reportProtocolViolation(peerKey, 'neg_msg changes the active window continuation');
+            return;
+        }
         touchPeerSession(peerKey);
         if (session.initiator) {
             await handleNegentropyRoundAsInitiator(peerKey, session, decodeNegentropyFrame(msg.frame));
@@ -2132,7 +2106,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, `${msg.type} is for a future round`);
             return null;
         }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowId, msg.type)) {
+        if (!isCurrentSessionWindow(peerKey, session, msg.windowSeq, msg.type)) {
             return null;
         }
         return session;
@@ -2438,7 +2412,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             const ack: OpsAckMessage = {
                 ...options.createBaseMessage('ops_ack'),
                 sessionId: session.sessionId,
-                windowId: getExpectedWindowId(session),
+                windowSeq: getExpectedWindowSeq(session),
                 round: msg.round,
                 requestId: msg.requestId,
                 page: msg.page,
@@ -2500,10 +2474,23 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
         if (!isExpectedRound(peerKey, msg.round, session.rounds, 'neg_close')
-            || !isCurrentSessionWindow(peerKey, session, msg.windowId, 'neg_close')) {
+            || !isCurrentSessionWindow(peerKey, session, msg.windowSeq, 'neg_close')) {
             return;
         }
-        trackRemoteWindowProgress(session, msg.windowProgress);
+        const mayOmitContinuation = msg.reason === 'sync_busy'
+            || msg.reason === 'ordered_catchup_active'
+            || msg.reason === 'gatekeeper_processing_unavailable'
+            || msg.reason === 'snapshot_busy'
+            || msg.reason === 'snapshot_build_failed';
+        if (!Object.prototype.hasOwnProperty.call(msg, 'continuation') && !mayOmitContinuation) {
+            reportProtocolViolation(peerKey, 'active neg_close is missing continuation');
+            return;
+        }
+        if (Object.prototype.hasOwnProperty.call(msg, 'continuation')
+            && !trackRemoteContinuation(session, msg.continuation!)) {
+            reportProtocolViolation(peerKey, 'neg_close changes the active window continuation');
+            return;
+        }
         if (msg.reason === 'complete' && session.windowIncomplete) {
             if (!sendNegClose(peerKey, session, 'incomplete')) {
                 closePeerSession(peerKey, 'send_neg_close_failed');
@@ -2701,7 +2688,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     async function initializeAdapter(): Promise<void> {
         negentropyAdapter = await NegentropyAdapter.create({
             syncStore: options.syncStore,
-            frameSizeLimit: options.frameSizeLimit,
             maxRecordsPerWindow: options.maxRecordsPerWindow,
             maxRoundsPerSession: options.maxRoundsPerSession,
             deferInitialBuild: true,
@@ -2716,7 +2702,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 stats: negentropyAdapter.getStats(),
                 maxRecordsPerWindow: options.maxRecordsPerWindow,
                 maxRoundsPerSession: options.maxRoundsPerSession,
-                frameSizeLimit: options.frameSizeLimit,
             },
             'negentropy adapter initialized',
         );

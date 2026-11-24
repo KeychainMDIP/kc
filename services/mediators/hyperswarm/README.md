@@ -56,6 +56,8 @@ format. Its reproducible source is:
 The native protocol version is separate from MDIP's Negentropy v2 session and
 operation-transfer protocol. Deterministic native frames and fingerprints are
 kept in `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
+Native frames are emitted as bytes and carried in JSON as canonical padded
+base64. Their decoded protocol maximum is fixed at 128 KiB.
 
 ## Transfer and resource limits
 
@@ -192,7 +194,6 @@ Gatekeeper acceptance.
 | `KC_HYPR_POSTGRES_URL`    | `KC_POSTGRES_URL`, then built-in DSN | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_POSTGRES_URL`         | (no default)                 | Shared fallback for `KC_HYPR_POSTGRES_URL` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
-| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter, with a hard maximum of 25,000. It is also the non-empty-node gap threshold for ordered catch-up |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |

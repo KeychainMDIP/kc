@@ -153,7 +153,6 @@ function buildNegentropyCoordinator(
 ) {
     return createNegentropyCoordinator({
         wireVersion: WIRE_PROTOCOL_VERSION,
-        frameSizeLimit: config.negentropyFrameSizeLimit,
         maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
         maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
@@ -227,7 +226,6 @@ transport = createHyperswarmTransport({
         maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
-        maxFrameBytes: config.negentropyFrameSizeLimit,
         maxRecordsPerWindow: MAX_NEGENTROPY_WINDOW_RECORDS,
     },
     syncStats,

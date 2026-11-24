@@ -4,6 +4,7 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
     decodeFramedMessages,
@@ -37,25 +38,20 @@ interface Cursor {
 }
 
 interface WireWindow {
-    name: string;
-    fromTs: number;
-    toTs: number;
-    maxRecords: number;
-    order: number;
+    until: number;
+    limit: number;
     after?: Cursor;
 }
 
 interface WireBody {
     type: string;
     sessionId?: string;
-    windowId?: string;
+    windowSeq?: number;
     round?: number;
     reason?: string;
     window?: WireWindow;
-    windowProgress?: {
-        cappedByRecords?: boolean;
-        lastCursor?: Cursor;
-    };
+    continuation?: Cursor | null;
+    previousContinuation?: Cursor | null;
     ids?: string[];
     data?: Operation[];
 }
@@ -310,13 +306,13 @@ function snapshotCappedCursor(
     const cursors = Array.from(expectedCursors)
         .filter(cursor => (
             knownIds.has(cursor.id)
-            && cursor.ts >= window.fromTs
-            && cursor.ts <= window.toTs
+            && cursor.ts >= MDIP_EPOCH_SECONDS
+            && cursor.ts <= window.until
             && (!window.after || compareSyncCursor(cursor, window.after) > 0)
         ))
         .sort(compareSyncCursor);
-    return cursors.length > window.maxRecords
-        ? cursors[window.maxRecords - 1]
+    return cursors.length > window.limit
+        ? cursors[window.limit - 1]
         : undefined;
 }
 
@@ -338,7 +334,11 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
     const messages = decodeWire(link).filter(message => NEGENTROPY_MESSAGE_TYPES.has(message.body.type));
     const opens = messages.filter(message => message.body.type === 'neg_open');
     expect(opens.length).toBeGreaterThan(0);
-    expect(opens[0].body.window).toMatchObject({ order: 0 });
+    expect(opens[0].body.window).toMatchObject({
+        until: expect.any(Number),
+        limit: expect.any(Number),
+    });
+    expect(opens[0].body.windowSeq).toBe(0);
     expect(opens[0].body.window?.after).toBeUndefined();
     const initiatorDirection = link.connectionB.remotePublicKey.compare(link.connectionA.remotePublicKey) < 0
         ? 'a-to-b'
@@ -362,22 +362,22 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             .flatMap(delivery => delivery.writeSequences),
     );
     const seenWindowTuples = new Set<string>();
-    const initiatorSnapshotCursors = new Map<string, Cursor | undefined>();
-    let currentWindowId: string | null = null;
+    const initiatorSnapshotCursors = new Map<number, Cursor | undefined>();
+    let currentWindowSeq: number | null = null;
     let currentWindow: WireWindow | null = null;
     for (const message of messages) {
         expect(message.body.sessionId).toBe(opens[0].body.sessionId);
-        expect(message.body.windowId).toEqual(expect.any(String));
-        const windowId = message.body.windowId!;
+        expect(message.body.windowSeq).toEqual(expect.any(Number));
+        const windowSeq = message.body.windowSeq!;
 
         if (message.body.type === 'neg_open') {
             expect(message.body.window).toBeDefined();
             const nextWindow = message.body.window!;
-            if (currentWindow && nextWindow.order > currentWindow.order && nextWindow.after) {
+            if (currentWindow && message.body.windowSeq! > currentWindowSeq! && nextWindow.after) {
                 const requiredIds = Array.from(expectedCursors.values())
                     .filter(cursor => (
-                        cursor.ts >= nextWindow.fromTs
-                        && cursor.ts <= nextWindow.toTs
+                        cursor.ts >= MDIP_EPOCH_SECONDS
+                        && cursor.ts <= nextWindow.until
                         && compareSyncCursor(cursor, nextWindow.after!) <= 0
                     ))
                     .map(cursor => cursor.id);
@@ -387,27 +387,24 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             const tuple = JSON.stringify(nextWindow);
             expect(seenWindowTuples.has(tuple)).toBe(false);
             seenWindowTuples.add(tuple);
-            initiatorSnapshotCursors.set(windowId, snapshotCappedCursor(
+            initiatorSnapshotCursors.set(windowSeq, snapshotCappedCursor(
                 message.direction === 'a-to-b' ? knownA : knownB,
                 expectedCursors.values(),
                 nextWindow,
             ));
-            currentWindowId = windowId;
+            currentWindowSeq = windowSeq;
             currentWindow = nextWindow;
         }
         else {
-            expect(currentWindowId).not.toBeNull();
-            expect(windowId).toBe(currentWindowId);
+            expect(currentWindowSeq).not.toBeNull();
+            expect(windowSeq).toBe(currentWindowSeq);
         }
 
-        const progress = message.body.windowProgress;
-        if (progress?.cappedByRecords) {
-            expect(progress.lastCursor).toBeDefined();
-        }
-        if (progress?.lastCursor) {
+        const continuation = message.body.continuation;
+        if (continuation) {
             expect(currentWindow).not.toBeNull();
             if (currentWindow!.after) {
-                expect(compareSyncCursor(progress.lastCursor, currentWindow!.after)).toBeGreaterThanOrEqual(0);
+                expect(compareSyncCursor(continuation, currentWindow!.after)).toBeGreaterThanOrEqual(0);
             }
         }
 
@@ -424,7 +421,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         expect(messages.some(message => (
             message.direction === responseDirection
             && message.body.sessionId === open.body.sessionId
-            && message.body.windowId === open.body.windowId
+            && message.body.windowSeq === open.body.windowSeq
             && (message.body.type === 'neg_msg' || message.body.type === 'neg_close')
         ))).toBe(true);
     }
@@ -433,31 +430,28 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
     for (let index = 1; index < opens.length; index += 1) {
         const previous = opens[index - 1].body.window!;
         const next = opens[index].body.window!;
-        expect(next.name).toBe(previous.name);
-        expect(next.fromTs).toBe(previous.fromTs);
-        expect(next.toTs).toBe(previous.toTs);
+        expect(next.until).toBe(previous.until);
+        expect(opens[index].body.windowSeq).toBe(opens[index - 1].body.windowSeq! + 1);
 
-        if (next.order === previous.order) {
-            expect(sameCursor(next.after, previous.after)).toBe(true);
-            expect(next.maxRecords).toBeLessThan(previous.maxRecords);
+        if (sameCursor(next.after, previous.after)) {
+            expect(next.limit).toBeLessThan(previous.limit);
             continue;
         }
 
-        expect(next.order).toBe(previous.order + 1);
-        expect(next.maxRecords).toBe(previous.maxRecords);
+        expect(next.limit).toBe(previous.limit);
         expect(next.after).toBeDefined();
         if (previous.after) {
             expect(compareSyncCursor(next.after!, previous.after)).toBeGreaterThan(0);
         }
 
-        const previousWindowId = opens[index - 1].body.windowId;
+        const previousWindowSeq = opens[index - 1].body.windowSeq;
         const observedCursors = messages.flatMap(message => {
             if (message.sequence >= opens[index].sequence
-                || message.body.windowId !== previousWindowId
+                || message.body.windowSeq !== previousWindowSeq
                 || !deliveredWriteSequences.has(message.sequence)) {
                 return [];
             }
-            const progressCursor = message.body.windowProgress?.lastCursor;
+            const progressCursor = message.body.continuation ?? undefined;
             const pushedCursors = message.body.type === 'ops_push'
                 ? (message.body.data ?? []).map(operationCursor)
                 : [];
@@ -466,7 +460,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         expect(observedCursors.length).toBeGreaterThan(0);
         const matchesObservedCursor = observedCursors.some(cursor => sameCursor(cursor, next.after));
         const matchesLocalCursor = sameCursor(
-            initiatorSnapshotCursors.get(previousWindowId!),
+            initiatorSnapshotCursors.get(previousWindowSeq!),
             next.after,
         );
         expect(matchesObservedCursor || matchesLocalCursor).toBe(true);
@@ -481,7 +475,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         body: {
             type: 'neg_close',
             sessionId: opens[0].body.sessionId,
-            windowId: currentWindowId,
+            windowSeq: currentWindowSeq,
             reason: 'complete',
         },
     });
@@ -978,7 +972,7 @@ describe('hyperswarm mediator behavior', () => {
             if (scenarioName === 'future timestamp pages') {
                 const expectedToTs = Math.max(...union.map(operation => operationCursor(operation).ts));
                 expect(opens.length).toBeGreaterThan(1);
-                expect(opens.every(open => open.body.window?.toTs === expectedToTs)).toBe(true);
+                expect(opens.every(open => open.body.window?.until === expectedToTs)).toBe(true);
             }
             if (scenarioName === 'same-second exact cap') {
                 expect(opens).toHaveLength(1);
@@ -988,9 +982,10 @@ describe('hyperswarm mediator behavior', () => {
                 const responderDirection: TransportDirection = aInitiates ? 'b-to-a' : 'a-to-b';
                 const responderProgress = firstMessages.flatMap(message => (
                     message.direction === responderDirection
-                    && message.body.windowId === opens[0].body.windowId
-                    && message.body.windowProgress
-                        ? [message.body.windowProgress.cappedByRecords]
+                    && message.body.windowSeq === opens[0].body.windowSeq
+                    && (message.body.type === 'neg_msg' || message.body.type === 'neg_close')
+                    && Object.prototype.hasOwnProperty.call(message.body, 'continuation')
+                        ? [message.body.continuation !== null]
                         : []
                 ));
 
@@ -1081,7 +1076,7 @@ describe('hyperswarm mediator behavior', () => {
             && (message.body.data ?? []).some(operation => operationCursor(operation).id === arrivingId)
         ));
         expect(pushesWithArrival.length).toBeGreaterThan(0);
-        expect(pushesWithArrival.every(message => message.body.windowId !== initialOpen.body.windowId)).toBe(true);
+        expect(pushesWithArrival.every(message => message.body.windowSeq !== initialOpen.body.windowSeq)).toBe(true);
         await assertConverged(driver, union);
 
         await driver.reconnect();
@@ -1134,9 +1129,8 @@ describe('hyperswarm mediator behavior', () => {
         const splitObserved = windows.some((window, index) => {
             const previous = windows[index - 1];
             return previous
-                && window.order === previous.order
                 && sameCursor(window.after, previous.after)
-                && window.maxRecords < previous.maxRecords;
+                && window.limit < previous.limit;
         });
         if (!splitObserved) {
             throw new Error(`round-cap split not observed: ${JSON.stringify(windows)}`);

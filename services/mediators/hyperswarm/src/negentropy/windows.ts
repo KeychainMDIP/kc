@@ -46,9 +46,19 @@ export function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): 
     };
 }
 
-export function makeWindowId(window: ReconciliationWindow): string {
+export function makeWindowKey(window: ReconciliationWindow): string {
     const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
     return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}:${after}`;
+}
+
+export function sameWindow(left: ReconciliationWindow, right: ReconciliationWindow): boolean {
+    return left.toTs === right.toTs
+        && left.maxRecords === right.maxRecords
+        && left.order === right.order
+        && (!left.after && !right.after
+            || !!left.after && !!right.after
+            && left.after.ts === right.after.ts
+            && left.after.id === right.after.id);
 }
 
 export function windowLabel(window: ReconciliationWindow): string {
@@ -95,7 +105,7 @@ export function buildRoundCapSplitWindow(window: ReconciliationWindow): Reconcil
         fromTs: window.fromTs,
         toTs: window.toTs,
         maxRecords: splitMaxRecords,
-        order: window.order,
+        order: window.order + 1,
         after: cloneCursor(window.after) ?? undefined,
     };
 }

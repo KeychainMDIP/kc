@@ -19,8 +19,10 @@ import { hasContentVerifiedOperationId } from './sync-persistence.js';
 import {
     MAX_ADVERTISED_DID_BYTES,
     MAX_ADVERTISED_PEERS,
+    MAX_NEGENTROPY_FRAME_BYTES,
     MAX_PROTOCOL_STRING_BYTES,
 } from './protocol-limits.js';
+import { MDIP_EPOCH_SECONDS } from './negentropy/windows.js';
 
 const MESSAGE_TYPES = new Set<HyperMessage['type']>([
     'ping',
@@ -45,18 +47,17 @@ const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     ordered_catchup_req: new Set(['type', 'sessionId', 'after']),
     ordered_catchup_push: new Set(['type', 'sessionId', 'cursor', 'hasMore', 'operations']),
     ordered_catchup_done: new Set(['type', 'sessionId']),
-    neg_open: new Set(['type', 'sessionId', 'windowId', 'window', 'round', 'frame', 'previousWindowProgress']),
-    neg_msg: new Set(['type', 'sessionId', 'windowId', 'round', 'frame', 'windowProgress']),
-    neg_close: new Set(['type', 'sessionId', 'windowId', 'round', 'reason', 'windowProgress']),
-    ops_offer: new Set(['type', 'sessionId', 'windowId', 'round', 'offerId', 'ids']),
-    ops_req: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'offerId', 'ids', 'deferred']),
-    ops_push: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'page', 'hasMore', 'data']),
-    ops_ack: new Set(['type', 'sessionId', 'windowId', 'round', 'requestId', 'page', 'deferred']),
+    neg_open: new Set(['type', 'sessionId', 'windowSeq', 'window', 'round', 'frame', 'previousContinuation']),
+    neg_msg: new Set(['type', 'sessionId', 'windowSeq', 'round', 'frame', 'continuation']),
+    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'reason', 'continuation']),
+    ops_offer: new Set(['type', 'sessionId', 'windowSeq', 'round', 'offerId', 'ids']),
+    ops_req: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'offerId', 'ids', 'deferred']),
+    ops_push: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'page', 'hasMore', 'data']),
+    ops_ack: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'page', 'deferred']),
 };
 
 export interface ProtocolPayloadLimits extends OpsPushBatchingOptions {
     maxIdsPerRequest: number;
-    maxFrameBytes: number;
     maxRecordsPerWindow: number;
 }
 
@@ -138,17 +139,11 @@ function validateWindowCursor(value: unknown, name: string): string | null {
             : null);
 }
 
-function validateWindowProgress(value: unknown, name: string): string | null {
+function validateContinuation(value: unknown, name: string, optional: boolean): string | null {
     if (value === undefined) {
-        return null;
+        return optional ? null : `${name} is required`;
     }
-    if (!isObject(value) || typeof value.cappedByRecords !== 'boolean') {
-        return `${name} must contain a boolean cappedByRecords`;
-    }
-    return validateKnownProperties(value, new Set(['cappedByRecords', 'lastCursor']), name)
-        ?? (value.lastCursor === undefined
-            ? null
-            : validateWindowCursor(value.lastCursor, `${name}.lastCursor`));
+    return value === null ? null : validateWindowCursor(value, name);
 }
 
 function validateWindow(value: unknown, maxRecords: number): string | null {
@@ -157,31 +152,20 @@ function validateWindow(value: unknown, maxRecords: number): string | null {
     }
     const nameError = validateKnownProperties(
         value,
-        new Set(['name', 'fromTs', 'toTs', 'maxRecords', 'order', 'after']),
+        new Set(['until', 'limit', 'after']),
         'window',
-    ) ?? validateRequiredBoundedString(value.name, 'window.name');
+    );
     if (nameError) {
         return nameError;
     }
-    const fromError = validateSafeInteger(value.fromTs, 'window.fromTs');
-    if (fromError) {
-        return fromError;
+    const untilError = validateSafeInteger(value.until, 'window.until', MDIP_EPOCH_SECONDS);
+    if (untilError) {
+        return untilError;
     }
-    const toError = validateSafeInteger(value.toTs, 'window.toTs');
-    if (toError) {
-        return toError;
-    }
-    if ((value.fromTs as number) > (value.toTs as number)) {
-        return 'window.fromTs must not exceed window.toTs';
-    }
-    const orderError = validateSafeInteger(value.order, 'window.order');
-    if (orderError) {
-        return orderError;
-    }
-    if (!Number.isSafeInteger(value.maxRecords)
-        || (value.maxRecords as number) <= 0
-        || (value.maxRecords as number) > maxRecords) {
-        return `window.maxRecords must be a safe integer between 1 and ${maxRecords}`;
+    if (!Number.isSafeInteger(value.limit)
+        || (value.limit as number) <= 0
+        || (value.limit as number) > maxRecords) {
+        return `window.limit must be a safe integer between 1 and ${maxRecords}`;
     }
     return value.after === undefined ? null : validateWindowCursor(value.after, 'window.after');
 }
@@ -194,31 +178,19 @@ function validateCanonicalBase64(value: string): Buffer | null {
     return decoded.toString('base64') === value ? decoded : null;
 }
 
-function validateFrame(value: unknown, maxFrameBytes: number): string | null {
-    if (!isObject(value) || (value.encoding !== 'utf8' && value.encoding !== 'base64') || typeof value.data !== 'string') {
-        return 'frame must contain a supported encoding and string data';
+function validateFrame(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return 'frame must be canonical base64';
     }
-    const propertyError = validateKnownProperties(value, new Set(['encoding', 'data']), 'frame');
-    if (propertyError) {
-        return propertyError;
+    if (utf8Bytes(value) > Math.ceil(MAX_NEGENTROPY_FRAME_BYTES / 3) * 4) {
+        return `frame exceeds ${MAX_NEGENTROPY_FRAME_BYTES} decoded bytes`;
     }
-
-    if (value.encoding === 'utf8') {
-        const bytes = utf8Bytes(value.data);
-        return maxFrameBytes > 0 && bytes > maxFrameBytes
-            ? `frame exceeds ${maxFrameBytes} decoded bytes`
-            : null;
+    const decoded = validateCanonicalBase64(value);
+    if (!decoded || decoded.length === 0) {
+        return 'frame must be non-empty canonical base64';
     }
-
-    if (maxFrameBytes > 0 && utf8Bytes(value.data) > Math.ceil(maxFrameBytes / 3) * 4) {
-        return `frame exceeds ${maxFrameBytes} decoded bytes`;
-    }
-    const decoded = validateCanonicalBase64(value.data);
-    if (!decoded) {
-        return 'frame data must be canonical base64';
-    }
-    return maxFrameBytes > 0 && decoded.length > maxFrameBytes
-        ? `frame exceeds ${maxFrameBytes} decoded bytes`
+    return decoded.length > MAX_NEGENTROPY_FRAME_BYTES
+        ? `frame exceeds ${MAX_NEGENTROPY_FRAME_BYTES} decoded bytes`
         : null;
 }
 
@@ -293,7 +265,7 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
             ? 'hasMore must be a boolean'
             : null;
     }
-    return validateRequiredAsciiToken(message.windowId, 'windowId')
+    return validateSafeInteger(message.windowSeq, 'windowSeq')
         ?? validateSafeInteger(message.round, 'round')
         ?? (message.type === 'ops_offer' ? validateSafeInteger(message.offerId, 'offerId') : null)
         ?? (message.type === 'ops_req' || message.type === 'ops_push' || message.type === 'ops_ack'
@@ -442,13 +414,13 @@ export function validateHyperMessagePayload(
         reason = validateCursor(message.after, 'after');
     } else if (message.type === 'neg_open') {
         reason = validateWindow(message.window, limits.maxRecordsPerWindow)
-            ?? validateFrame(message.frame, limits.maxFrameBytes)
-            ?? validateWindowProgress(message.previousWindowProgress, 'previousWindowProgress');
+            ?? validateFrame(message.frame)
+            ?? validateContinuation(message.previousContinuation, 'previousContinuation', true);
     } else if (message.type === 'neg_msg') {
-        reason = validateFrame(message.frame, limits.maxFrameBytes)
-            ?? validateWindowProgress(message.windowProgress, 'windowProgress');
+        reason = validateFrame(message.frame)
+            ?? validateContinuation(message.continuation, 'continuation', false);
     } else if (message.type === 'neg_close') {
-        reason = validateWindowProgress(message.windowProgress, 'windowProgress');
+        reason = validateContinuation(message.continuation, 'continuation', true);
     }
     return reason ? { ok: false, reason } : { ok: true, value: message };
 }

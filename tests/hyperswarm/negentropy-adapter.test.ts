@@ -1,6 +1,7 @@
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
 import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
+import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
 import { Operation } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import { jest } from '@jest/globals';
@@ -136,7 +137,7 @@ describe('NegentropyAdapter', () => {
             syncStore: store,
         });
 
-        expect(adapter.getStats().frameSizeLimit).toBe(0);
+        expect(adapter.getStats().frameSizeLimit).toBe(MAX_NEGENTROPY_FRAME_BYTES);
     });
 
     it('sets wantUint8ArrayOutput on the underlying negentropy instance', async () => {
@@ -148,7 +149,6 @@ describe('NegentropyAdapter', () => {
         const adapter = await NegentropyAdapter.create({
             syncStore: store,
             frameSizeLimit: 0,
-            wantUint8ArrayOutput: true,
         });
 
         const snapshot = adapter.getCurrentSnapshot();
@@ -184,7 +184,7 @@ describe('NegentropyAdapter', () => {
             frameSizeLimit: 0,
         });
 
-        let msg: string | Uint8Array | null = await adapterA.initiate();
+        let msg: Uint8Array | null = await adapterA.initiate();
         const have = new Set<string>();
         const need = new Set<string>();
 
@@ -196,10 +196,10 @@ describe('NegentropyAdapter', () => {
             const round = await adapterA.reconcile(response);
 
             for (const id of round.haveIds) {
-                have.add(String(id));
+                have.add(typeof id === 'string' ? id : Buffer.from(id).toString('hex'));
             }
             for (const id of round.needIds) {
-                need.add(String(id));
+                need.add(typeof id === 'string' ? id : Buffer.from(id).toString('hex'));
             }
 
             msg = round.nextMsg;
@@ -247,7 +247,7 @@ describe('NegentropyAdapter', () => {
         });
 
         await expect(adapter.initiate()).rejects.toThrow('not initialized');
-        await expect(adapter.reconcile('msg')).rejects.toThrow('not initialized');
+        await expect(adapter.reconcile(Buffer.from('msg'))).rejects.toThrow('not initialized');
     });
 
     it('returns null earliest timestamp for an empty store', async () => {

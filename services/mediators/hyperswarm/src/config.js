@@ -22,16 +22,6 @@ function parsePositiveIntEnv(varName, defaultValue, options = {}) {
     return value;
 }
 
-function parseFrameSizeLimit() {
-    const valueKb = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT', 0, { allowZero: true });
-
-    if (valueKb > 0 && valueKb < 4) {
-        throw new Error('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4 (KB)');
-    }
-
-    return valueKb * 1024;
-}
-
 function parseSyncDbEnv() {
     const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
     if (!normalized) {
@@ -63,7 +53,6 @@ const config = {
     nodeName,
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
-    negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyMaxRecordsPerWindow,
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),

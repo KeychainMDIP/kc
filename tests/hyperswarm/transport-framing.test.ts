@@ -3,6 +3,7 @@ import {
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     encodeFramedMessage,
 } from '../../services/mediators/hyperswarm/src/transport-framing.ts';
+import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
 
 describe('hyperswarm transport framing', () => {
     it('encodes and decodes a single framed message', () => {
@@ -34,7 +35,7 @@ describe('hyperswarm transport framing', () => {
     });
 
     it('decodes multiple framed messages from one chunk', () => {
-        const first = JSON.stringify({ type: 'neg_msg', frame: 'abc' });
+        const first = JSON.stringify({ type: 'neg_msg', continuation: null, frame: 'abc' });
         const second = JSON.stringify({ type: 'neg_close', reason: 'complete' });
         const framed = Buffer.concat([encodeFramedMessage(first), encodeFramedMessage(second)]);
         const decoded = decodeFramedMessages(framed);
@@ -106,18 +107,32 @@ describe('hyperswarm transport framing', () => {
         );
     });
 
+    it('fits a maximum native Negentropy frame inside the transport limit', () => {
+        const message = JSON.stringify({
+            type: 'neg_msg',
+            sessionId: 'session-1',
+            windowSeq: 0,
+            round: 0,
+            continuation: null,
+            frame: Buffer.alloc(MAX_NEGENTROPY_FRAME_BYTES).toString('base64'),
+        });
+
+        expect(Buffer.byteLength(message)).toBeLessThan(DEFAULT_MAX_FRAMED_MESSAGE_BYTES);
+        expect(() => encodeFramedMessage(message)).not.toThrow();
+    });
+
     it('preserves back-to-back ops_push and neg_close as distinct messages', () => {
         const opsPush = JSON.stringify({
             type: 'ops_push',
             sessionId: 'session-1',
-            windowId: 'window-1',
+            windowSeq: 0,
             round: 10,
             data: [{ signature: { hash: '00c8d13206871afdb0f93a4a91b14ca186a4b030b0dc53b7d726f265db89e54f' } }],
         });
         const negClose = JSON.stringify({
             type: 'neg_close',
             sessionId: 'session-1',
-            windowId: 'window-1',
+            windowSeq: 0,
             round: 10,
             reason: 'complete',
         });

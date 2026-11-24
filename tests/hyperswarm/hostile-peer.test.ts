@@ -21,7 +21,7 @@ import { encodeFramedMessage, decodeFramedMessages } from '../../services/mediat
 
 const limits = {
     maxIdsPerRequest: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
-    maxFrameBytes: 0, maxRecordsPerWindow: 25_000,
+    maxRecordsPerWindow: 25_000,
 };
 const base = {};
 const ping = {
@@ -105,7 +105,7 @@ async function createHarness() {
         onRelayFailure: (key, connection) => queue.handleRelayFailure(key, connection),
     });
     negentropy = createNegentropyCoordinator({
-        wireVersion: 2, frameSizeLimit: 0,
+        wireVersion: 2,
         maxRecordsPerWindow: 25_000, maxRoundsPerSession: 64,
         maxIdsPerRequest: 1_000, maxIdsPerLookup: 32,
         maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
@@ -309,7 +309,7 @@ describe('hostile peer integration', () => {
             expect(await h.negentropy.startSession(peer.key, { source: 'connect', initiator: true })).toBe(true);
             const open = JSON.parse(decodeFramedMessages(peer.lastWrite).messages[0].toString());
             await h.send(peer, { ...base, type: 'ops_push', sessionId: open.sessionId,
-                windowId: open.windowId, round: open.round, requestId: 999, page: 0,
+                windowSeq: open.windowSeq, round: open.round, requestId: 999, page: 0,
                 hasMore: false, data: [],
             });
             expect(peer.destroyed).toBe(true);
@@ -328,7 +328,7 @@ describe('hostile peer integration', () => {
                 ...base,
                 type: 'ops_req',
                 sessionId: 'invented-session',
-                windowId: 'invented-window',
+                windowSeq: 0,
                 round: 0,
                 requestId: 0,
                 ids: Array.from({ length: limits.maxIdsPerRequest + 1 }, (_, index) =>

@@ -24,7 +24,6 @@ const payloadLimits = {
     maxIdsPerRequest: 1_000,
     maxOpsPerPush: 300,
     maxBytesPerPush: 512 * 1024,
-    maxFrameBytes: 64 * 1024,
     maxRecordsPerWindow: 25_000,
 };
 
@@ -184,7 +183,7 @@ describe('hyperswarm transport routing', () => {
         const messages = [
             ping(),
             { type: 'queue', operations: [] },
-            { type: 'neg_close', sessionId: 's', windowId: 'w', round: 0 },
+            { type: 'neg_close', sessionId: 's', windowSeq: 0, round: 0 },
         ].map(message => encodeFramedMessage(JSON.stringify(message)));
 
         await transport.processInboundPeerData(peerKey, Buffer.concat(messages));
@@ -234,7 +233,7 @@ describe('hyperswarm transport routing', () => {
         expect(transport.getAdmissionCounts()).toMatchObject({ compatibility: 1, total: 1 });
     });
 
-    it('classifies a legacy ping as incompatible without a punitive strike', async () => {
+    it('classifies a framed ping without a wire version as incompatible without a punitive strike', async () => {
         const peerKey = Buffer.alloc(32, 0x2a).toString('hex');
         const connection = new FakeConnection(0x2a);
         const { transport, syncStats, onPing } = createTransport();

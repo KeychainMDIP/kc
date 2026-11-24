@@ -31,7 +31,7 @@ interface WireMessage {
         type: string;
         reason?: string;
         sessionId?: string;
-        windowId?: string;
+        windowSeq?: string;
         round?: number;
         requestId?: number;
         page?: number;
@@ -90,7 +90,7 @@ function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
     }
     expect(finalOpen.body).toMatchObject({
         sessionId: expect.any(String),
-        windowId: expect.any(String),
+        windowSeq: expect.any(Number),
     });
     const finalMessage = messages.filter(message => (
         ['neg_open', 'neg_msg', 'ops_req', 'ops_push', 'neg_close'].includes(message.body.type)
@@ -99,10 +99,10 @@ function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
     expect(finalMessage).toMatchObject({
         direction: finalOpen.direction,
         body: {
-            type: 'neg_close',
+            type: 'neg_close', continuation: null,
             reason: 'complete',
             sessionId: finalOpen.body.sessionId,
-            windowId: finalOpen.body.windowId,
+            windowSeq: finalOpen.body.windowSeq,
         },
     });
     expect(finalMessage!.sequence).toBeGreaterThan(finalOpen.sequence);

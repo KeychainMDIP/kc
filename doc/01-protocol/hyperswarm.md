@@ -36,6 +36,29 @@ match the pinned official file. The language-neutral protocol is defined by the
 The repository's deterministic ordering, fingerprint and frame vectors are in
 `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
 
+Native Negentropy frames are byte arrays carried as canonical padded base64
+strings. Their decoded size is limited to 128 KiB; the outer JSON transport
+retains its separate 16 MiB framed-message limit.
+
+Reconciliation uses one fixed history beginning at the MDIP epoch, so each
+wire window carries only its variable upper bound, record limit and optional
+keyset cursor:
+
+```ts
+interface ReconciliationWindow {
+  until: number;
+  limit: number;
+  after?: { ts: number; id: string };
+}
+```
+
+Every session starts at `windowSeq: 0`. A later window increments the sequence
+by one and must exactly match a continuation or smaller round-cap split derived
+from the preceding window. `neg_msg` and active-session `neg_close` messages
+carry `continuation: null` for an uncapped snapshot or its cursor when capped.
+The next `neg_open` repeats that value as `previousContinuation`; an immediate
+busy rejection may omit it because no snapshot was admitted.
+
 ## Ordered catch-up
 
 Ordered catch-up is optional. A client requests the first page without `after`;

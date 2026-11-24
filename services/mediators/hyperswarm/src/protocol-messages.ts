@@ -1,7 +1,6 @@
 import type { Operation } from '@mdip/gatekeeper/types';
 import type { SyncStoreOrderedCursor } from './db/types.js';
 import type {
-    NegentropyFrame,
     NegentropyWindowPayload,
     OrderedCatchupCapability,
 } from './negentropy/protocol.js';
@@ -26,7 +25,7 @@ export interface QueueMessage extends HyperMessageBase {
     operations: Operation[];
 }
 
-export type NativeNegentropyFrame = string | Uint8Array;
+export type NativeNegentropyFrame = Uint8Array;
 
 export interface NegentropyRoundOutcome {
     nextMsg: NativeNegentropyFrame | null;
@@ -34,46 +33,40 @@ export interface NegentropyRoundOutcome {
     needIds: string[];
 }
 
-export interface NegentropyWindowProgress {
-    cappedByRecords: boolean;
-    lastCursor?: {
-        ts: number;
-        id: string;
-    };
-}
+export type NegentropyContinuation = { ts: number; id: string } | null;
 
 export interface NegOpenMessage extends HyperMessageBase {
     type: 'neg_open';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     window: NegentropyWindowPayload;
     round: number;
-    frame: NegentropyFrame;
-    previousWindowProgress?: NegentropyWindowProgress;
+    frame: string;
+    previousContinuation?: NegentropyContinuation;
 }
 
 export interface NegMsgMessage extends HyperMessageBase {
     type: 'neg_msg';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
-    frame: NegentropyFrame;
-    windowProgress?: NegentropyWindowProgress;
+    frame: string;
+    continuation: NegentropyContinuation;
 }
 
 export interface NegCloseMessage extends HyperMessageBase {
     type: 'neg_close';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
     reason?: string;
-    windowProgress?: NegentropyWindowProgress;
+    continuation?: NegentropyContinuation;
 }
 
 export interface OpsReqMessage extends HyperMessageBase {
     type: 'ops_req';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
     requestId: number;
     offerId?: number;
@@ -84,7 +77,7 @@ export interface OpsReqMessage extends HyperMessageBase {
 export interface OpsOfferMessage extends HyperMessageBase {
     type: 'ops_offer';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
     offerId: number;
     ids: string[];
@@ -93,7 +86,7 @@ export interface OpsOfferMessage extends HyperMessageBase {
 export interface OpsPushMessage extends HyperMessageBase {
     type: 'ops_push';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
     requestId: number;
     page: number;
@@ -104,7 +97,7 @@ export interface OpsPushMessage extends HyperMessageBase {
 export interface OpsAckMessage extends HyperMessageBase {
     type: 'ops_ack';
     sessionId: string;
-    windowId: string;
+    windowSeq: number;
     round: number;
     requestId: number;
     page: number;

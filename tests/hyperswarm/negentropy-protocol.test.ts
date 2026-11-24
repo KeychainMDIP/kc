@@ -9,8 +9,10 @@ import {
     normalizePeerCapabilities,
     parseRemoteWindow,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 
 const h = (c: string) => c.repeat(64);
+const nativeFrame = (value: string): Uint8Array => Buffer.from(value);
 
 function makeOp(hash: string): Operation {
     return {
@@ -24,18 +26,17 @@ function makeOp(hash: string): Operation {
 }
 
 describe('negentropy protocol helpers', () => {
-    it('encodes and decodes utf8 frame payloads', () => {
-        const payload = encodeNegentropyFrame('frame-message');
-        expect(payload.encoding).toBe('utf8');
-        expect(decodeNegentropyFrame(payload)).toBe('frame-message');
+    it('encodes native frames as canonical base64', () => {
+        const payload = encodeNegentropyFrame(nativeFrame('frame-message'));
+        expect(payload).toBe(Buffer.from('frame-message').toString('base64'));
+        expect(Buffer.from(decodeNegentropyFrame(payload))).toStrictEqual(Buffer.from('frame-message'));
     });
 
     it('encodes and decodes binary frame payloads', () => {
         const bytes = Uint8Array.from([1, 2, 3, 250]);
         const payload = encodeNegentropyFrame(bytes);
-        expect(payload.encoding).toBe('base64');
         const decoded = decodeNegentropyFrame(payload);
-        expect(Buffer.from(decoded as Uint8Array)).toStrictEqual(Buffer.from(bytes));
+        expect(Buffer.from(decoded)).toStrictEqual(Buffer.from(bytes));
     });
 
     it('normalizes absent peer capabilities', () => {
@@ -133,22 +134,29 @@ describe('negentropy protocol helpers', () => {
 
     it('rejects malformed remote reconciliation windows', () => {
         const window = {
-            name: 'history_paged', fromTs: 1, toTs: 2, maxRecords: 16, order: 0,
+            until: MDIP_EPOCH_SECONDS + 2, limit: 16,
         };
         const malformed = [
             null,
-            { ...window, fromTs: Number.NaN },
-            { ...window, toTs: Number.NaN },
-            { ...window, fromTs: 3 },
-            { ...window, order: 0.5 },
-            { ...window, order: -1 },
+            { ...window, until: Number.NaN },
+            { ...window, limit: Number.NaN },
+            { ...window, until: MDIP_EPOCH_SECONDS - 1 },
+            { ...window, limit: 25_001 },
+            { ...window, extra: true },
             { ...window, after: { ts: 1.5, id: h('a') } },
             { ...window, after: { ts: 1, id: null } },
             { ...window, after: { ts: 1, id: 'invalid' } },
         ];
 
         for (const candidate of malformed) {
-            expect(parseRemoteWindow(candidate as never, 16)).toBeNull();
+            expect(parseRemoteWindow(candidate as never, 0)).toBeNull();
         }
+        expect(parseRemoteWindow(window, 3)).toStrictEqual({
+            name: 'history_paged',
+            fromTs: MDIP_EPOCH_SECONDS,
+            toTs: window.until,
+            maxRecords: 16,
+            order: 3,
+        });
     });
 });

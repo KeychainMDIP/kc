@@ -1,8 +1,9 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
+import { MDIP_EPOCH_SECONDS } from './windows.js';
+import { MAX_NEGENTROPY_WINDOW_RECORDS } from '../protocol-limits.js';
 
-export type NegentropyFrameEncoding = 'utf8' | 'base64';
 export const NEG_SYNC_ID_RE = /^[a-f0-9]{64}$/;
 
 export interface PeerCapabilities {
@@ -25,17 +26,9 @@ export interface NegotiatedPeerCapabilities {
     latestTs: number | null;
 }
 
-export interface NegentropyFrame {
-    encoding: NegentropyFrameEncoding;
-    data: string;
-}
-
 export interface NegentropyWindowPayload {
-    name: string;
-    fromTs: number;
-    toTs: number;
-    maxRecords: number;
-    order: number;
+    until: number;
+    limit: number;
     after?: {
         ts: number;
         id: string;
@@ -44,25 +37,29 @@ export interface NegentropyWindowPayload {
 
 export function parseRemoteWindow(
     raw: NegentropyWindowPayload,
-    maxRecordsLimit: number,
+    windowSeq: number,
 ): ReconciliationWindow | null {
     if (!raw || typeof raw !== 'object') {
         return null;
     }
-
-    const fromTs = Number(raw.fromTs);
-    const toTs = Number(raw.toTs);
-    const order = Number(raw.order);
-    const remoteMaxRecords = Number(raw.maxRecords);
-    const maxRecords = Number.isInteger(remoteMaxRecords) && remoteMaxRecords > 0
-        ? Math.min(remoteMaxRecords, maxRecordsLimit)
-        : maxRecordsLimit;
-
-    if (!Number.isFinite(fromTs) || !Number.isFinite(toTs) || fromTs > toTs) {
+    if (Object.keys(raw).some(key => key !== 'until' && key !== 'limit' && key !== 'after')) {
         return null;
     }
 
-    if (!Number.isInteger(order) || order < 0) {
+    const toTs = Number(raw.until);
+    const remoteMaxRecords = Number(raw.limit);
+    if (!Number.isInteger(remoteMaxRecords)
+        || remoteMaxRecords <= 0
+        || remoteMaxRecords > MAX_NEGENTROPY_WINDOW_RECORDS) {
+        return null;
+    }
+    const maxRecords = remoteMaxRecords;
+
+    if (!Number.isSafeInteger(toTs) || toTs < MDIP_EPOCH_SECONDS) {
+        return null;
+    }
+
+    if (!Number.isSafeInteger(windowSeq) || windowSeq < 0) {
         return null;
     }
 
@@ -82,12 +79,12 @@ export function parseRemoteWindow(
     }
 
     return {
-        name: String(raw.name || `window_${order}`),
-        fromTs,
+        name: 'history_paged',
+        fromTs: MDIP_EPOCH_SECONDS,
         toTs,
-        order,
+        order: windowSeq,
         maxRecords,
-        after,
+        ...(after ? { after } : {}),
     };
 }
 
@@ -119,26 +116,12 @@ export function buildOrderedCatchupCapabilities(
     };
 }
 
-export function encodeNegentropyFrame(frame: string | Uint8Array): NegentropyFrame {
-    if (typeof frame === 'string') {
-        return {
-            encoding: 'utf8',
-            data: frame,
-        };
-    }
-
-    return {
-        encoding: 'base64',
-        data: Buffer.from(frame).toString('base64'),
-    };
+export function encodeNegentropyFrame(frame: Uint8Array): string {
+    return Buffer.from(frame).toString('base64');
 }
 
-export function decodeNegentropyFrame(frame: NegentropyFrame): string | Uint8Array {
-    if (frame.encoding === 'utf8') {
-        return frame.data;
-    }
-
-    return Buffer.from(frame.data, 'base64');
+export function decodeNegentropyFrame(frame: string): Uint8Array {
+    return Buffer.from(frame, 'base64');
 }
 
 export function normalizeNegentropyIds(ids: Array<string | Uint8Array>): string[] {

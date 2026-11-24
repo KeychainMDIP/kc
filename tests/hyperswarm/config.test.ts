@@ -116,33 +116,6 @@ describe('hyperswarm config', () => {
         ).rejects.toThrow('Invalid KC_HYPR_EXPORT_INTERVAL; expected a positive integer');
     });
 
-    it('throws when frame size limit is non-zero and below minimum', async () => {
-        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '2';
-
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow('KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT must be 0 or >= 4 (KB)');
-    });
-
-    it('throws on negative frame size limit values', async () => {
-        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '-1';
-
-        await expect(
-            jest.isolateModulesAsync(async () => {
-                await import(CONFIG_PATH);
-            })
-        ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT; expected a non-negative integer');
-    });
-
-    it('interprets frame size limit env value as KB', async () => {
-        process.env.KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT = '4';
-
-        const config = await importConfigIsolated();
-        expect(config.negentropyFrameSizeLimit).toBe(4096);
-    });
-
     it('uses an explicit Negentropy window size', async () => {
         process.env.KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW = '500';
 
