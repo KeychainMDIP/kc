@@ -165,7 +165,7 @@ describe('hyperswarm protocol validation', () => {
             ...base('neg_close'), sessionId: 's', windowId: 'w', round: '0',
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ordered_catchup_push'), sessionId: 's', hasMore: 1, data: [],
+            ...base('ordered_catchup_push'), sessionId: 's', hasMore: 1, operations: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
             ...base('ops_req'), sessionId: '', windowId: 'w', round: 0, requestId: 0, ids: [],
@@ -269,21 +269,45 @@ describe('hyperswarm protocol validation', () => {
             requestId: 0, page: 0, deferred: 'true',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ordered_catchup_req'), sessionId: 's', cursor: { syncOrder: '1', id: 'a'.repeat(64) },
+            ...base('ordered_catchup_req'), sessionId: 's', after: { syncOrder: '1', id: 'a'.repeat(64) },
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ordered_catchup_req'), sessionId: 's', cursor: { syncOrder: 1, id: 'invalid' },
+            ...base('ordered_catchup_req'), sessionId: 's', after: { syncOrder: 1, id: 'invalid' },
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ordered_catchup_req'), sessionId: 's', cursor: 'invalid',
+            ...base('ordered_catchup_req'), sessionId: 's', after: 'invalid',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
             ...base('ordered_catchup_req'), sessionId: 's',
         } as never, limits).ok).toBe(true);
+        expect(validateHyperMessageEnvelope({
+            ...base('ordered_catchup_req'), sessionId: 's',
+            cursor: { syncOrder: 1, id: 'a'.repeat(64) },
+        })).toMatchObject({
+            ok: false,
+            reason: 'ordered_catchup_req contains unknown property cursor',
+        });
         expect(validateHyperMessagePayload({
-            ...base('ordered_catchup_push'), sessionId: 's', hasMore: false, data: [value],
+            ...base('ordered_catchup_push'), sessionId: 's', hasMore: false, operations: [value],
             cursor: { syncOrder: 1, id: 'a'.repeat(64) },
         } as never, limits).ok).toBe(true);
+        expect(validateHyperMessageEnvelope({
+            ...base('ordered_catchup_push'), sessionId: 's', hasMore: false, data: [value],
+            cursor: { syncOrder: 1, id: 'a'.repeat(64) },
+        })).toMatchObject({
+            ok: false,
+            reason: 'ordered_catchup_push contains unknown property data',
+        });
+        expect(validateHyperMessagePayload({
+            ...base('ordered_catchup_push'), sessionId: 's', hasMore: false, operations: [value],
+        } as never, limits)).toMatchObject({ ok: false, reason: 'cursor is required' });
+        expect(validateHyperMessagePayload({
+            ...base('ordered_catchup_push'), sessionId: 's', hasMore: false, operations: [],
+            cursor: { syncOrder: 1, id: 'a'.repeat(64) },
+        } as never, limits)).toMatchObject({
+            ok: false,
+            reason: 'ordered_catchup_push operations must not be empty',
+        });
         expect(validateHyperMessagePayload({
             ...base('neg_open'), sessionId: 's', windowId: 'w', round: 0,
             window: { name: 'w', fromTs: 0, toTs: 1, order: 0, maxRecords: 11 },

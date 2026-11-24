@@ -42,8 +42,8 @@ type ProtocolValidationResult<T> = TransferValidationResult<T>;
 const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     ping: new Set(['type', 'version', 'name', 'peerDids', 'latestTs', 'ordered']),
     queue: new Set(['type', 'operations']),
-    ordered_catchup_req: new Set(['type', 'sessionId', 'cursor']),
-    ordered_catchup_push: new Set(['type', 'sessionId', 'cursor', 'hasMore', 'data']),
+    ordered_catchup_req: new Set(['type', 'sessionId', 'after']),
+    ordered_catchup_push: new Set(['type', 'sessionId', 'cursor', 'hasMore', 'operations']),
     ordered_catchup_done: new Set(['type', 'sessionId']),
     neg_open: new Set(['type', 'sessionId', 'windowId', 'window', 'round', 'frame', 'previousWindowProgress']),
     neg_msg: new Set(['type', 'sessionId', 'windowId', 'round', 'frame', 'windowProgress']),
@@ -386,11 +386,20 @@ export function validateHyperMessagePayload(
             : { ok: false, reason: 'deferred must be a boolean' };
     }
     if (message.type === 'ordered_catchup_push') {
-        reason = validateCursor(message.cursor, 'cursor');
-        if (!reason) {
-            const result = validateOperationPage(message.data, limits);
-            return result.ok ? { ok: true, value: message } : result;
+        if (message.cursor === undefined) {
+            return { ok: false, reason: 'cursor is required' };
         }
+        reason = validateCursor(message.cursor, 'cursor');
+        if (reason) {
+            return { ok: false, reason };
+        }
+        const result = validateOperationPage(message.operations, limits);
+        if (!result.ok) {
+            return result;
+        }
+        return result.value.operations.length === 0
+            ? { ok: false, reason: 'ordered_catchup_push operations must not be empty' }
+            : { ok: true, value: message };
     }
     if (message.type === 'ops_offer') {
         const result = validateIdList(message.ids, limits.maxIdsPerRequest);
@@ -430,7 +439,7 @@ export function validateHyperMessagePayload(
             : { ok: false, reason: 'deferred is valid only for an offered request' };
     }
     if (message.type === 'ordered_catchup_req') {
-        reason = validateCursor(message.cursor, 'cursor');
+        reason = validateCursor(message.after, 'after');
     } else if (message.type === 'neg_open') {
         reason = validateWindow(message.window, limits.maxRecordsPerWindow)
             ?? validateFrame(message.frame, limits.maxFrameBytes)

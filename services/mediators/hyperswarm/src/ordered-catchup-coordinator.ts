@@ -14,7 +14,6 @@ import { normalizeInboundOpsPushBatch } from './operation-order.js';
 import {
     getOrderedCursorFromRow,
     isOrderedCursorAfter,
-    parseOrderedCatchupCursor,
 } from './ordered-catchup.js';
 import type {
     HyperMessage,
@@ -144,7 +143,15 @@ export function createOrderedCatchupCoordinator(
             maxRecordsPerWindow: 1,
         });
         if (!result.ok) {
-            options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
+            const client = message.type === 'ordered_catchup_push'
+                ? clients.get(peerKey)
+                : undefined;
+            rejectProtocolMessage(
+                peerKey,
+                client?.sessionId === message.sessionId ? client : null,
+                connection,
+                `invalid_${message.type}: ${result.reason}`,
+            );
             return false;
         }
         return true;
@@ -264,7 +271,7 @@ export function createOrderedCatchupCoordinator(
         const message: OrderedCatchupReqMessage = {
             ...options.createBaseMessage('ordered_catchup_req'),
             sessionId: session.sessionId,
-            cursor: session.cursor ?? undefined,
+            after: session.cursor ?? undefined,
         };
         const sent = sendMessage(session.peerKey, message);
         if (sent) {
@@ -426,11 +433,7 @@ export function createOrderedCatchupCoordinator(
             log.warn({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up request from unsupported peer');
             return;
         }
-        const cursor = parseOrderedCatchupCursor(message.cursor);
-        if (cursor === null) {
-            rejectProtocolMessage(peerKey, null, connection, 'invalid_ordered_catchup_req_cursor');
-            return;
-        }
+        const cursor = message.after;
 
         const current = servers.get(peerKey);
         const continuing = current?.sessionId === message.sessionId;
@@ -541,7 +544,7 @@ export function createOrderedCatchupCoordinator(
                         sessionId: message.sessionId,
                         cursor: nextCursor,
                         hasMore: rows.length > pageRows.length,
-                        data: batch,
+                        operations: batch,
                     };
                     if (!await options.sendBulkToPeer(peerKey, push)) {
                         clearServer(
@@ -617,20 +620,12 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, 'unsolicited_ordered_catchup_push');
             return;
         }
-        if (message.data.length === 0) {
-            rejectProtocolMessage(peerKey, session, connection, 'empty_ordered_catchup_push');
-            return;
-        }
-        const cursor = parseOrderedCatchupCursor(message.cursor);
-        if (!cursor) {
-            rejectProtocolMessage(peerKey, session, connection, 'invalid_ordered_catchup_cursor');
-            return;
-        }
+        const cursor = message.cursor;
         if (session.cursor && !isOrderedCursorAfter(cursor, session.cursor)) {
             rejectProtocolMessage(peerKey, session, connection, 'non_advancing_ordered_catchup_cursor');
             return;
         }
-        const page = validateOperationPage(message.data, {
+        const page = validateOperationPage(message.operations, {
             maxOpsPerPush: options.maxOpsPerPage,
             maxBytesPerPush: options.maxBytesPerPage,
         });
@@ -638,7 +633,7 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${page.reason}`);
             return;
         }
-        const finalOperation = mapOperationToSyncKey(message.data[message.data.length - 1]);
+        const finalOperation = mapOperationToSyncKey(message.operations[message.operations.length - 1]);
         if (!finalOperation.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${finalOperation.reason}`);
             return;
@@ -647,13 +642,13 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, 'mismatched_ordered_catchup_cursor');
             return;
         }
-        const content = validateOperationContentIds(message.data, options.cipher);
+        const content = validateOperationContentIds(message.operations, options.cipher);
         if (!content.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${content.reason}`);
             return;
         }
-        const batch = normalizeInboundOpsPushBatch(message.data);
-        if (batch.length !== message.data.length) {
+        const batch = normalizeInboundOpsPushBatch(message.operations);
+        if (batch.length !== message.operations.length) {
             rejectProtocolMessage(peerKey, session, connection, 'ordered_catchup_push_contains_duplicate_operations');
             return;
         }

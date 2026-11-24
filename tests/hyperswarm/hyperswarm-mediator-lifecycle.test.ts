@@ -315,7 +315,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         running.node.gatekeeperClient.getStatus.mockResolvedValue(busyStatus);
         await sendPeerMessage(peer, {
             type: 'ordered_catchup_push', sessionId,
-            data: [operation], cursor: { syncOrder: 1, id: operation.signature!.hash }, hasMore: true,
+            operations: [operation], cursor: { syncOrder: 1, id: operation.signature!.hash }, hasMore: true,
         });
         await settle();
         const imports = running.node.gatekeeperClient.importBatch.mock.calls.length;
@@ -1138,7 +1138,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 sessionId: 'buffered-session',
                 cursor: { syncOrder: index + 1, id: operation.signature!.hash },
                 hasMore: true,
-                data: [operation],
+                operations: [operation],
             })));
         }
 
@@ -1161,7 +1161,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
                 sessionId: 'buffered-session',
                 cursor: { syncOrder: 4, id: operations[3].signature!.hash },
                 hasMore: false,
-                data: [operations[3]],
+                operations: [operations[3]],
             })));
             await peer.pair.pumpUntilIdle();
             expect(processEvents).toHaveBeenCalledTimes(2);

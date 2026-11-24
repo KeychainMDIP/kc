@@ -38,6 +38,7 @@ interface WireMessage {
         hasMore?: boolean;
         ids?: string[];
         data?: Operation[];
+        operations?: Operation[];
     };
 }
 
@@ -1001,7 +1002,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 .flatMap(message => message.body.ids ?? [])).toStrictEqual([]);
             expect(secondMessages
                 .filter(message => ['ops_push', 'ordered_catchup_push', 'batch', 'queue'].includes(message.body.type))
-                .flatMap(message => message.body.data ?? [])).toStrictEqual([]);
+                .flatMap(message => message.body.operations ?? message.body.data ?? [])).toStrictEqual([]);
 
             const canonicalA = (await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
                 .map(row => ({ ts: row.ts, id: row.id }));

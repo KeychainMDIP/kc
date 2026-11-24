@@ -481,14 +481,14 @@ describe('Gatekeeper processing recovery', () => {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
                 type: 'ordered_catchup_push', sessionId: 'session',
-                data: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
+                operations: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();
             const sent = sendToPeer.mock.calls.length;
             // An already requested prefetched page may arrive while the worker waits.
             await coordinator.handleMessage('peer', {
                 type: 'ordered_catchup_push', sessionId: 'session',
-                data: [orderedOperation], cursor: { syncOrder: 2, id: orderedOperation.signature!.hash }, hasMore: true,
+                operations: [orderedOperation], cursor: { syncOrder: 2, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await jest.advanceTimersByTimeAsync(121_000);
             coordinator.expire();
@@ -543,7 +543,7 @@ describe('Gatekeeper processing recovery', () => {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
                 type: 'ordered_catchup_push', sessionId: 'session',
-                data: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
+                operations: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();
             await jest.advanceTimersByTimeAsync(121_000);

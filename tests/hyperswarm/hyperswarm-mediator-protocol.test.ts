@@ -709,7 +709,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 encodeFramedMessage(JSON.stringify({
                     type: 'ordered_catchup_req',
                     sessionId: 'unverified-session',
-                    cursor: null,
+                    after: null,
                 })),
             ),
         );
@@ -2907,7 +2907,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'deferred-build-session',
                 cursor: { syncOrder: 1, id: operations[1].signature!.hash },
                 hasMore: true,
-                data: [operations[1]],
+                operations: [operations[1]],
             });
             await eventually(() => protocolNode.store.has(operations[1].signature!.hash));
 
@@ -2921,7 +2921,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'deferred-build-session',
                 cursor: { syncOrder: 2, id: operations[2].signature!.hash },
                 hasMore: false,
-                data: [operations[2]],
+                operations: [operations[2]],
             });
             await eventually(() => decodeWrites(pair).some(message => message.type === 'neg_open'));
 
@@ -5561,7 +5561,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             hasMore: false,
             cursor: { syncOrder: 2, id: operations[1].signature!.hash },
         });
-        expect((push?.data as Operation[]).map(operation => operation.signature!.hash)).toEqual(
+        expect((push?.operations as Operation[]).map(operation => operation.signature!.hash)).toEqual(
             operations.map(operation => operation.signature!.hash),
         );
 
@@ -5577,7 +5577,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.sendOrderedCatchupPage(peerKey, {
                 type: 'ordered_catchup_req',
                 sessionId: 'invalid-session',
-                cursor,
+                after: cursor,
             } as any));
         }
         expect(pair.transcript).toHaveLength(writesBefore);
@@ -5618,7 +5618,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'paced-session',
                 cursor: { syncOrder: 1, id: operation.signature!.hash },
                 hasMore: true,
-                data: [operation],
+                operations: [operation],
             })),
         ));
 
@@ -5628,7 +5628,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'ordered_catchup_req',
                     sessionId: 'paced-session',
-                    cursor: { syncOrder: 1, id: operation.signature!.hash },
+                    after: { syncOrder: 1, id: operation.signature!.hash },
                 }),
             ]);
             expect(protocolNode.node.run(
@@ -5644,7 +5644,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'ordered_catchup_req',
                     sessionId: 'paced-session',
-                    cursor: { syncOrder: 1, id: operation.signature!.hash },
+                    after: { syncOrder: 1, id: operation.signature!.hash },
                 }),
             ]);
         }
@@ -5704,7 +5704,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'capacity-session',
                 cursor: { syncOrder: 2, id: operations[1].signature!.hash },
                 hasMore: true,
-                data: operations,
+                operations: operations,
             })),
         ));
         await eventually(() => protocolNode.node.run(
@@ -5741,7 +5741,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const requests = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_req');
             const retry = requests.at(-1)!;
             expect(retry).toMatchObject({ type: 'ordered_catchup_req' });
-            expect(retry.cursor).toBeUndefined();
+            expect(retry.after).toBeUndefined();
             expect(retry.sessionId).not.toBe('capacity-session');
 
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -5751,7 +5751,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     sessionId: retry.sessionId,
                     cursor: { syncOrder: 2, id: operations[1].signature!.hash },
                     hasMore: false,
-                    data: operations,
+                    operations: operations,
                 })),
             ));
             await eventually(async () => await protocolNode.store.has(operations[1].signature!.hash));
@@ -5800,7 +5800,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             sessionId: 'terminal-import-session',
             cursor: { syncOrder: 1, id: acceptedOperation.signature!.hash },
             hasMore: false,
-            data: [acceptedOperation],
+            operations: [acceptedOperation],
         };
         const sendPage = async (message: Record<string, unknown>) => protocolNode.node.run(
             () => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -5820,7 +5820,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             await sendPage({
                 ...finalPage,
                 cursor: { syncOrder: 2, id: lateOperation.signature!.hash },
-                data: [lateOperation],
+                operations: [lateOperation],
             });
             expect(protocolNode.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(1);
             expect(protocolNode.node.run(
@@ -5867,7 +5867,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     sessionId: 'deferred-prebuild-session',
                     cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
                     hasMore,
-                    data: [operations[index]],
+                    operations: [operations[index]],
                 })),
             ),
         );
@@ -5917,7 +5917,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     sessionId: 'retryable-session',
                     cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
                     hasMore: true,
-                    data: [operations[index]],
+                    operations: [operations[index]],
                 })),
             ),
         );
@@ -5990,7 +5990,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     sessionId: 'replaced-retryable-session',
                     cursor: { syncOrder: index + 1, id: operations[index].signature!.hash },
                     hasMore: true,
-                    data: [operations[index]],
+                    operations: [operations[index]],
                 })),
             ),
         );
@@ -6060,7 +6060,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'stale-import-session',
                 cursor: { syncOrder: 1, id: operation.signature!.hash },
                 hasMore: true,
-                data: [operation],
+                operations: [operation],
             })),
         ));
 
@@ -6070,7 +6070,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 expect.objectContaining({
                     type: 'ordered_catchup_req',
                     sessionId: 'stale-import-session',
-                    cursor: { syncOrder: 1, id: operation.signature!.hash },
+                    after: { syncOrder: 1, id: operation.signature!.hash },
                 }),
             ]);
             protocolNode.node.run(() => protocolNode.node.mediator.__test.disconnectPeer(initialPeer.peerKey));
@@ -6144,7 +6144,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'continuation-session',
                 cursor: { syncOrder: 1, id: continuationOperation.signature!.hash },
                 hasMore: true,
-                data: [continuationOperation],
+                operations: [continuationOperation],
             })),
         ));
         expect(continuationWrite).toHaveBeenCalledTimes(1);
@@ -6453,7 +6453,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     sessionId: 'draining-session',
                     cursor: { syncOrder: 1, id: operation.signature!.hash },
                     hasMore: false,
-                    data: [operation],
+                    operations: [operation],
                 })),
             ));
             await processStarted;
@@ -6857,7 +6857,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
-            encodeFramedMessage(JSON.stringify({ ...request, cursor: firstPush?.cursor })),
+            encodeFramedMessage(JSON.stringify({ ...request, after: firstPush?.cursor })),
         ));
 
         const messages = decodeWrites(pair);
@@ -6865,7 +6865,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(pushes).toHaveLength(2);
         expect(pushes[1]).toMatchObject({
             hasMore: false,
-            data: [operations[300]],
+            operations: [operations[300]],
         });
         expect(messages.some(message => message.type === 'ordered_catchup_done')).toBe(false);
         expect(count).toHaveBeenCalledTimes(1);
@@ -6898,13 +6898,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify(request)),
         ));
         let pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
-        expect((pushes[0].data as Operation[])).toHaveLength(Math.min(count, 300));
+        expect((pushes[0].operations as Operation[])).toHaveLength(Math.min(count, 300));
         expect(pushes[0].hasMore).toBe(count > 300);
 
         if (count === 301) {
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
                 peerKey,
-                encodeFramedMessage(JSON.stringify({ ...request, cursor: pushes[0].cursor })),
+                encodeFramedMessage(JSON.stringify({ ...request, after: pushes[0].cursor })),
             ));
             pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
             expect(pushes[1]).toMatchObject({
@@ -6914,8 +6914,8 @@ describe('hyperswarm mediator protocol characterization', () => {
         }
 
         const delivered = count === 301
-            ? [...pushes[0].data as Operation[], ...pushes[1].data as Operation[]]
-            : pushes[0].data as Operation[];
+            ? [...pushes[0].operations as Operation[], ...pushes[1].operations as Operation[]]
+            : pushes[0].operations as Operation[];
         expect(delivered.map(operation => operation.signature!.hash)).toStrictEqual(
             operations.map(operation => operation.signature!.hash),
         );
@@ -6944,7 +6944,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify(request)),
         ));
         let pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
-        const firstPage = pushes[0].data as Operation[];
+        const firstPage = pushes[0].operations as Operation[];
         const firstPageBytes = Buffer.byteLength(JSON.stringify(firstPage), 'utf8');
         expect(firstPage.length).toBeLessThan(operations.length);
         expect(firstPageBytes).toBeLessThanOrEqual(512 * 1024);
@@ -6956,13 +6956,13 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
             peerKey,
-            encodeFramedMessage(JSON.stringify({ ...request, cursor: pushes[0].cursor })),
+            encodeFramedMessage(JSON.stringify({ ...request, after: pushes[0].cursor })),
         ));
         pushes = decodeWrites(pair).filter(message => message.type === 'ordered_catchup_push');
         expect(pushes[1].hasMore).toBe(false);
         expect([
             ...firstPage,
-            ...pushes[1].data as Operation[],
+            ...pushes[1].operations as Operation[],
         ].map(operation => operation.signature!.hash)).toStrictEqual(
             operations.map(operation => operation.signature!.hash),
         );
@@ -6992,7 +6992,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'dependency-session',
                 cursor: { syncOrder: 1, id: asset.signature!.hash },
                 hasMore: true,
-                data: [asset],
+                operations: [asset],
             })),
         ));
         await eventually(() => protocolNode.node.gatekeeperClient.processEvents.mock.calls.length >= 1);
@@ -7000,7 +7000,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair).at(-1)).toMatchObject({
             type: 'ordered_catchup_req',
             sessionId: 'dependency-session',
-            cursor: { syncOrder: 1, id: asset.signature!.hash },
+            after: { syncOrder: 1, id: asset.signature!.hash },
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -7010,7 +7010,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'dependency-session',
                 cursor: { syncOrder: 2, id: controller.signature!.hash },
                 hasMore: true,
-                data: [controller],
+                operations: [controller],
             })),
         ));
         await eventually(() => protocolNode.node.gatekeeperClient.processEvents.mock.calls.length >= 2);
@@ -7023,7 +7023,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'dependency-session',
                 cursor: { syncOrder: 3, id: update.signature!.hash },
                 hasMore: true,
-                data: [update],
+                operations: [update],
             })),
         ));
         await eventually(async () => (await protocolNode.store.count()) === 3);
@@ -7035,7 +7035,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'dependency-session',
                 cursor: { syncOrder: 4, id: deletion.signature!.hash },
                 hasMore: false,
-                data: [deletion],
+                operations: [deletion],
             })),
         ));
         await eventually(async () => (await protocolNode.store.count()) === 4);
@@ -7075,7 +7075,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'cursor-session',
                 cursor: firstCursor,
                 hasMore: true,
-                data: [operations[0]],
+                operations: [operations[0]],
             })),
         ));
         await eventually(async () => await protocolNode.store.has(operations[0].signature!.hash));
@@ -7089,7 +7089,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: 'cursor-session',
                 cursor: nextCursor,
                 hasMore: true,
-                data: [nextOperation],
+                operations: [nextOperation],
             })),
         ));
         await nextTurn();
@@ -7157,7 +7157,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             sessionId: 'stale-session',
             cursor: { syncOrder: 1, id: operation.signature!.hash },
             hasMore: true,
-            data: [operation],
+            operations: [operation],
         }));
         expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
 
@@ -7166,13 +7166,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             sessionId: 'client-session',
             cursor: { syncOrder: 1, id: operation.signature!.hash },
             hasMore: true,
-            data: [operation],
+            operations: [operation],
         }));
         await eventually(async () => await protocolNode.store.has(operation.signature!.hash));
         expect(decodeWrites(pair).at(-1)).toMatchObject({
             type: 'ordered_catchup_req',
             sessionId: 'client-session',
-            cursor: { syncOrder: 1, id: operation.signature!.hash },
+            after: { syncOrder: 1, id: operation.signature!.hash },
         });
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
@@ -7188,7 +7188,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             sessionId: 'client-session',
             cursor: { syncOrder: -1, id: hash('a') },
             hasMore: false,
-            data: [],
+            operations: [],
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey),

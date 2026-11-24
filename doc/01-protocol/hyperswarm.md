@@ -35,3 +35,29 @@ match the pinned official file. The language-neutral protocol is defined by the
 [Negentropy Protocol V1 specification](https://github.com/hoytech/negentropy/blob/fc53c6c12db03c0d27abfd1e956ba75c37152821/docs/negentropy-protocol-v1.md).
 The repository's deterministic ordering, fingerprint and frame vectors are in
 `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
+
+## Ordered catch-up
+
+Ordered catch-up is optional. A client requests the first page without `after`;
+continuation requests carry the exact `cursor` returned by the preceding page
+as `after`.
+
+```ts
+interface OrderedCursor {
+  syncOrder: number;
+  id: string; // 64 lowercase hexadecimal characters
+}
+
+type OrderedCatchupMessage =
+  | { type: 'ordered_catchup_req'; sessionId: string; after?: OrderedCursor }
+  | { type: 'ordered_catchup_push'; sessionId: string; cursor: OrderedCursor;
+      hasMore: boolean; operations: Operation[] }
+  | { type: 'ordered_catchup_done'; sessionId: string };
+```
+
+Every push contains at least one operation. Its cursor identifies the final
+operation and must advance beyond the requested cursor. `hasMore: true`
+authorizes a request using that exact cursor; `hasMore: false` completes the
+transfer after the page imports. `ordered_catchup_done` is the distinct
+zero-row answer to an outstanding request and carries neither operations nor a
+cursor. Only one request is outstanding at a time.

@@ -114,15 +114,15 @@ export interface OpsAckMessage extends HyperMessageBase {
 export interface OrderedCatchupReqMessage extends HyperMessageBase {
     type: 'ordered_catchup_req';
     sessionId: string;
-    cursor?: SyncStoreOrderedCursor;
+    after?: SyncStoreOrderedCursor;
 }
 
 export interface OrderedCatchupPushMessage extends HyperMessageBase {
     type: 'ordered_catchup_push';
     sessionId: string;
-    cursor?: SyncStoreOrderedCursor;
+    cursor: SyncStoreOrderedCursor;
     hasMore: boolean;
-    data: Operation[];
+    operations: Operation[];
 }
 
 export interface OrderedCatchupDoneMessage extends HyperMessageBase {

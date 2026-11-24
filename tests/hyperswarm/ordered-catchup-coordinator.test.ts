@@ -187,7 +187,7 @@ describe('ordered catch-up coordinator shutdown', () => {
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push', sessionId: 'reset-session',
             cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
         await nextTurn();
         expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
@@ -302,7 +302,7 @@ describe('ordered catch-up coordinator shutdown', () => {
             sessionId: 'failed-import',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
         await nextTurn();
 
@@ -338,7 +338,7 @@ describe('ordered catch-up coordinator shutdown', () => {
             sessionId: 'capacity',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
         await nextTurn();
 
@@ -371,7 +371,7 @@ describe('ordered catch-up coordinator shutdown', () => {
             sessionId: 'forged-page',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -420,7 +420,7 @@ describe('ordered catch-up coordinator shutdown', () => {
             sessionId: 'disconnect-import',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
 
         expect(request?.cancelled?.()).toBe(false);
@@ -450,7 +450,7 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'prefetch-failed')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push', sessionId: 'prefetch-failed',
-            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, operations: [operation],
         });
         await nextTurn();
 
@@ -478,7 +478,7 @@ describe('ordered catch-up request authorization', () => {
         expect(coordinator.createClientSession(peerKey, 'completion-error')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push', sessionId: 'completion-error',
-            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, data: [operation],
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: true, operations: [operation],
         });
 
         expect(operationPages.getMetrics().pages).toBe(0);
@@ -524,7 +524,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'unknown-session',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: Array.from({ length: 257 }, () => operation),
+            operations: Array.from({ length: 257 }, () => operation),
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -549,7 +549,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'unknown-session',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
 
         expect(onProtocolViolation).not.toHaveBeenCalled();
@@ -579,7 +579,7 @@ describe('ordered catch-up request authorization', () => {
                     sessionId: 'unsolicited',
                     cursor: { syncOrder: 1, id: operation.signature.hash },
                     hasMore: true,
-                    data: [operation],
+                    operations: [operation],
                 }
                 : {
                     type,
@@ -607,12 +607,12 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'empty-page',
             cursor: { syncOrder: 1, id: 'a'.repeat(64) },
             hasMore: false,
-            data: [],
+            operations: [],
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
             peerKey,
-            'empty_ordered_catchup_push',
+            'invalid_ordered_catchup_push: ordered_catchup_push operations must not be empty',
             expect.any(Object),
         );
         expect(coordinator.getActiveSessionId(peerKey)).toBeNull();
@@ -677,7 +677,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'malformed-page',
             cursor: { syncOrder: 1, id: 'a'.repeat(64) },
             hasMore: false,
-            data: [makeMalformed() as never],
+            operations: [makeMalformed() as never],
         })).resolves.toBeUndefined();
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -717,7 +717,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'duplicate-operations',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: false,
-            data: [operation, operation],
+            operations: [operation, operation],
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -748,7 +748,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'duplicate-page',
             cursor: { syncOrder: 1, id: operation.signature.hash },
             hasMore: true,
-            data: [operation],
+            operations: [operation],
         };
 
         expect(coordinator.createClientSession(peerKey, page.sessionId)).toBe(true);
@@ -784,7 +784,7 @@ describe('ordered catch-up request authorization', () => {
             sessionId: 'mismatched-cursor',
             cursor: { syncOrder: 1, id: 'f'.repeat(64) },
             hasMore: true,
-            data: [operation],
+            operations: [operation],
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -869,7 +869,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         expect(coordinator.createClientSession(peerKey, 'disconnected-push')).toBe(true);
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_push', sessionId: 'disconnected-push',
-            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false, data: [operation],
+            cursor: { syncOrder: 1, id: operation.signature.hash }, hasMore: false, operations: [operation],
         });
         coordinator.reset();
         expect(coordinator.createClientSession(peerKey, 'disconnected-done')).toBe(true);
@@ -961,7 +961,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
             sessionId: 'server',
-            cursor: sent[0].cursor as { syncOrder: number; id: string },
+            after: sent[0].cursor as { syncOrder: number; id: string },
         });
         expect(sent[1]).toMatchObject({
             type: 'ordered_catchup_push',
@@ -987,7 +987,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
             sessionId: 'server',
-            ...(cursor ? { cursor } : {}),
+            ...(cursor ? { after: cursor } : {}),
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(
@@ -1006,7 +1006,7 @@ describe('ordered catch-up server cursors and scheduling', () => {
         await coordinator.handleMessage(peerKey, {
             type: 'ordered_catchup_req',
             sessionId: 'server',
-            cursor: { syncOrder: 1, id: operations[0].signature.hash },
+            after: { syncOrder: 1, id: operations[0].signature.hash },
         });
 
         expect(onProtocolViolation).toHaveBeenCalledWith(

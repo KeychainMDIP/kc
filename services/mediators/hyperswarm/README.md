@@ -16,6 +16,9 @@ then sends one bounded page at a time and waits for an import acknowledgement.
 All network nodes must upgrade together because older message shapes are
 intentionally incompatible.
 
+The external message shapes and ordered catch-up terminal rules are documented
+in [the Hyperswarm synchronization protocol](../../../doc/01-protocol/hyperswarm.md).
+
 Realtime propagation uses best-effort Gatekeeper queue gossip:
 
 - mediator polls one bounded `gatekeeper.getQueue('hyperswarm')` head page per
