@@ -143,6 +143,7 @@ describe('negentropy protocol helpers', () => {
             { ...window, order: 0.5 },
             { ...window, order: -1 },
             { ...window, after: { ts: 1.5, id: h('a') } },
+            { ...window, after: { ts: 1, id: null } },
             { ...window, after: { ts: 1, id: 'invalid' } },
         ];
 

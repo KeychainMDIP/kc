@@ -106,6 +106,16 @@ describe('negentropy transfer batching helpers', () => {
         })).toThrow('operation at index 0 exceeds 32 bytes');
     });
 
+    it('includes array brackets in an outbound page byte limit', () => {
+        const op = makeOp('a');
+        const operationBytes = estimateOperationBytes(op);
+
+        expect(() => chunkOperationsForPush([op], {
+            maxOpsPerPush: 1,
+            maxBytesPerPush: operationBytes + 1,
+        })).toThrow(`operation at index 0 exceeds ${operationBytes + 1} bytes`);
+    });
+
     it('returns empty when operations input is empty', () => {
         expect(chunkOperationsForPush([], {
             maxOpsPerPush: 10,

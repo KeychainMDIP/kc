@@ -89,6 +89,14 @@ describe('hyperswarm protocol validation', () => {
         expect(validateHyperMessageEnvelope({ ...base('ping'), version: 2 }).ok).toBe(true);
         expect(validateHyperMessageEnvelope(valid).ok).toBe(true);
         expect(validateHyperMessageEnvelope({ ...valid, name: 'é'.repeat(129) })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({ ...valid, version: 1 })).toMatchObject({
+            ok: false,
+            reason: 'version must be 2',
+        });
+        expect(validateHyperMessageEnvelope({ ...valid, latestTs: -1 })).toMatchObject({
+            ok: false,
+            reason: 'latestTs must be a safe integer >= 0',
+        });
         expect(validateHyperMessageEnvelope({ ...valid, peerDids: 'invalid' })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({ ...valid, peerDids: ['not-a-did'] })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({ ...valid, ordered: [] })).toMatchObject({ ok: false });
@@ -100,6 +108,13 @@ describe('hyperswarm protocol validation', () => {
             ...valid,
             ordered: { count: -1, sourceReady: false },
         })).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({
+            ...valid,
+            ordered: { count: 1, sourceReady: 'true' },
+        })).toMatchObject({
+            ok: false,
+            reason: 'ordered.sourceReady must be a boolean',
+        });
         expect(validateHyperMessageEnvelope({
             ...valid,
             ordered: { count: 1, sourceReady: true },
@@ -334,6 +349,13 @@ describe('hyperswarm protocol validation', () => {
             ...base('neg_msg'), sessionId: 's', windowId: 'w', round: 0,
             frame: null,
         } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('neg_msg'), sessionId: 's', windowId: 'w', round: 0,
+            frame: { encoding: 'utf8', data: '', extra: true },
+        } as never, limits)).toMatchObject({
+            ok: false,
+            reason: 'frame contains unknown property extra',
+        });
         expect(validateHyperMessagePayload({
             ...base('neg_close'), sessionId: 's', windowId: 'w', round: 0,
             windowProgress: { cappedByRecords: 'true' },
