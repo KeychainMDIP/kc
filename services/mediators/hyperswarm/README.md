@@ -35,6 +35,23 @@ wire order does not bypass duplicate suppression.
 This keeps low latency for new operations while Negentropy handles catch-up and
 recovers best-effort delivery failures.
 
+## Native Negentropy engine
+
+The mediator vendors the official JavaScript Negentropy v1 engine as
+`src/negentropy/Negentropy.cjs`; the `.cjs` extension only selects Node's module
+format. Its reproducible source is:
+
+- repository: `https://github.com/hoytech/negentropy`
+- commit: `fc53c6c12db03c0d27abfd1e956ba75c37152821`
+- source path: `js/Negentropy.js`
+- SHA-256: `0ccda2fb5343f97a0679442aec55e258cab09ddc775a3f8af87ada7b3c02cb50`
+- native protocol byte: `0x61` (Negentropy protocol v1)
+- specification: [Negentropy Protocol V1](https://github.com/hoytech/negentropy/blob/fc53c6c12db03c0d27abfd1e956ba75c37152821/docs/negentropy-protocol-v1.md)
+
+The native protocol version is separate from MDIP's Negentropy v2 session and
+operation-transfer protocol. Deterministic native frames and fingerprints are
+kept in `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
+
 ## Transfer and resource limits
 
 Every message must use framed transport v1, including the initial ping. Raw JSON

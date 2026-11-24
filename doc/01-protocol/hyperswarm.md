@@ -1,0 +1,34 @@
+# Hyperswarm Synchronization Protocol
+
+MDIP nodes exchange Gatekeeper operations over a framed JSON protocol. The
+application protocol coordinates ordered catch-up, set reconciliation and the
+explicit transfer of operations; Gatekeeper remains authoritative for operation
+validity.
+
+All participating mediators must use the same MDIP Hyperswarm wire version. The
+current version intentionally has no compatibility fallback for older message
+shapes.
+
+## Native Negentropy layer
+
+Set reconciliation embeds the official Negentropy v1 byte protocol inside the
+MDIP JSON session protocol. Negentropy identifies differing operation IDs; MDIP's
+offer/request/push/ack exchange authorizes and transfers the corresponding
+operations.
+
+The vendored JavaScript engine is pinned as follows:
+
+| Property | Value |
+| --- | --- |
+| Repository | `https://github.com/hoytech/negentropy` |
+| Commit | `fc53c6c12db03c0d27abfd1e956ba75c37152821` |
+| Source file | `js/Negentropy.js` |
+| Vendored file | `services/mediators/hyperswarm/src/negentropy/Negentropy.cjs` |
+| SHA-256 | `0ccda2fb5343f97a0679442aec55e258cab09ddc775a3f8af87ada7b3c02cb50` |
+| Native protocol byte | `0x61` |
+
+The `.cjs` extension only selects Node's module format; the vendored contents
+match the pinned official file. The language-neutral protocol is defined by the
+[Negentropy Protocol V1 specification](https://github.com/hoytech/negentropy/blob/fc53c6c12db03c0d27abfd1e956ba75c37152821/docs/negentropy-protocol-v1.md).
+The repository's deterministic ordering, fingerprint and frame vectors are in
+`tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
