@@ -239,7 +239,6 @@ const WalletTab = () => {
                 onClose={handleMnemonicModalClose}
             />
 
-
             <Box className="flex-box" sx={{ gap: 2 }}>
                 <Button
                     className="mini-margin"
