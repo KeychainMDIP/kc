@@ -75,6 +75,7 @@ export default [
             '**/dist/**',
             'java',
             'java/**',
+            'apps/react-wallet/android/app/src/main/assets/public/**',
             ...vendoredFiles,
         ],
     },

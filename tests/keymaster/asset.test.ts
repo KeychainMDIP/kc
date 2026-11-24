@@ -2,13 +2,12 @@ import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
 
@@ -26,9 +25,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster } = createTestKeymaster(gatekeeper, cipher));
 });
 
 describe('createAsset', () => {
@@ -46,13 +44,7 @@ describe('createAsset', () => {
 
     it('should create assets with the configured DID prefix', async () => {
         const didPrefix = 'did:mdip';
-        const customKeymaster = new Keymaster({
-            gatekeeper,
-            wallet,
-            cipher,
-            didPrefix,
-            passphrase: 'passphrase'
-        });
+        const customKeymaster = createTestKeymaster(gatekeeper, cipher, { didPrefix }).keymaster;
         await customKeymaster.createId('Bob');
 
         const did = await customKeymaster.createAsset({ name: 'prefixed' });

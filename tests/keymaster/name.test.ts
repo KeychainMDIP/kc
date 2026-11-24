@@ -3,15 +3,16 @@ import Gatekeeper from '@mdip/gatekeeper';
 import Keymaster from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { ExpectedExceptionError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let store: import('@mdip/keymaster/wallet/json-memory').default;
+let providerStore: import('@mdip/keymaster/types').WalletProviderStore;
 
 beforeAll(async () => {
     ipfs = new HeliaClient();
@@ -27,9 +28,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster, store, providerStore } = createTestKeymaster(gatekeeper, cipher));
 });
 
 describe('addName', () => {
@@ -246,14 +246,14 @@ describe('listNames', () => {
         const bob = await keymaster.createId('Bob');
         await keymaster.addName('friend', bob);
         const before = JSON.stringify(await keymaster.loadWallet());
-        const storedBefore = await wallet.loadWallet();
+        const storedBefore = await store.loadWallet();
 
         expect(await keymaster.listNames({ includeIDs: true })).toStrictEqual({ friend: bob, Alice: alice, Bob: bob });
         expect(JSON.stringify(await keymaster.loadWallet())).toBe(before);
-        expect(await wallet.loadWallet()).toStrictEqual(storedBefore);
+        expect(await store.loadWallet()).toStrictEqual(storedBefore);
 
         await keymaster.renameId('Alice', 'Carol');
-        const restarted = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+        const restarted = createTestKeymaster(gatekeeper, cipher, { store, providerStore }).keymaster;
         expect(await restarted.listNames()).toStrictEqual({ friend: bob });
         expect(await restarted.getName('Alice')).toBeNull();
         expect(await restarted.listNames({ includeIDs: true })).toStrictEqual({ friend: bob, Bob: bob, Carol: alice });

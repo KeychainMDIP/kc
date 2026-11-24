@@ -7,7 +7,7 @@ set timeout 10
 
 spawn bash kc new-wallet
 expect {
-    -re {"version"\s*:\s*1} {
+    -re {"version"\s*:\s*2} {
         send_user "\n✅ Wallet Reset Complete!\n"
     }
     timeout {
@@ -30,74 +30,56 @@ expect {
     }
 }
 
-# Null value validation procedure
-proc validate_no_null_values {output} {
+# Wallet metadata validation procedure
+proc validate_wallet_output {output} {
     # Initialize validation tracking
     set validation_passed 1
     set validation_details {}
+    set validated_keys {}
 
-    # Check for explicit null values in top-level keys
-    set top_level_keys [list "seed" "counter" "ids" "current"]
-    foreach key $top_level_keys {
-        if {[string first "\"$key\": null" $output] != -1} {
-            lappend validation_details "\n❌ Top-level key '$key' is null"
-            set validation_passed 0
-        } else {
-            lappend validation_details "\n✅ Top-level key '$key' is not null"
-        }
-    }
+    set required_keys [list \
+        "version" \
+        "provider" \
+        "type" \
+        "walletFingerprint" \
+        "ids" \
+    ]
 
-    # Check nested keys 0
-    set nested_keys_0 [list "mnemonic" "hdkey"]
-    foreach key $nested_keys_0 {
-        if {[string first "\"$key\": null" $output] != -1} {
-            lappend validation_details "\n❌ Nested key '$key' is null"
-            set validation_passed 0
+    foreach key $required_keys {
+        if {[string first "\"$key\":" $output] != -1} {
+            if {![regexp "\"$key\"\\s*:\\s*null" $output]} {
+                lappend validated_keys "\n✅ Key present and not null: $key"
+            } else {
+                lappend validation_details "\n❌ Null value for key: $key"
+                set validation_passed 0
+            }
         } else {
-            lappend validation_details "\n✅ Nested key '$key' is not null"
-        }
-    }
-
-    # Check nested keys 1
-    set nested_keys_1 [list "xpriv" "xpub"]
-    foreach key $nested_keys_1 {
-        if {[string first "\"$key\": null" $output] != -1} {
-            lappend validation_details "\n❌ Nested '$key' is null"
+            lappend validation_details "\n❌ Missing key: $key"
             set validation_passed 0
-        } else {
-            lappend validation_details "\n✅ Nested '$key' is not null"
-        }
-    }
-
-    # Check nested ids keys
-    set ids_keys [list "did" "account" "index"]
-    foreach key $ids_keys {
-        if {[string first "\"$key\": null" $output] != -1} {
-            lappend validation_details "\n❌ IDs key '$key' is null"
-            set validation_passed 0
-        } else {
-            lappend validation_details "\n✅ IDs key '$key' is not null"
         }
     }
 
     # Print out all validation details
     puts "\nValidation Details:"
+    foreach detail $validated_keys {
+        puts $detail
+    }
     foreach detail $validation_details {
         puts $detail
     }
 
     # Final validation summary
     if {$validation_passed} {
-        puts "\n✅ Validation Passed: No null values detected"
+        puts "\n✅ Validation Passed: All required keys present, no null values"
         return 1
     } else {
-        puts "\n🔴 Validation Failed: Null values found"
+        puts "\n🔴 Validation Failed: Missing or null values found"
         return 0
     }
 }
 
 puts "\n🔍 Output to validate:\n$output"
-validate_no_null_values $output
+validate_wallet_output $output
 
 # Capture the full output
 set output ""

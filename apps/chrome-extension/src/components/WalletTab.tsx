@@ -8,6 +8,7 @@ import { useSnackbar } from "../contexts/SnackbarProvider";
 import WarningModal from "../modals/WarningModal";
 import MnemonicModal from "../modals/MnemonicModal";
 import WalletChrome from "@mdip/keymaster/wallet/chrome";
+import { MdipWalletBundle } from "@mdip/keymaster/types";
 
 const WalletTab = () => {
     const [open, setOpen] = useState<boolean>(false);
@@ -19,6 +20,7 @@ const WalletTab = () => {
     const [checkResultMessage, setCheckResultMessage] = useState<string>("");
     const {
         keymaster,
+        walletProvider,
         initialiseWallet,
         handleWalletUploadFile,
         pendingMnemonic,
@@ -46,7 +48,9 @@ const WalletTab = () => {
 
     async function createNewWallet() {
         const chromeWallet = new WalletChrome();
+        const providerWallet = new WalletChrome("mdip-wallet-provider");
         await chrome.storage.local.remove([chromeWallet.walletName]);
+        await chrome.storage.local.remove([providerWallet.walletName]);
         await chrome.runtime.sendMessage({ action: "CLEAR_ALL_STATE"});
         await chrome.runtime.sendMessage({ action: "CLEAR_PASSPHRASE"});
         await initialiseWallet();
@@ -122,11 +126,11 @@ const WalletTab = () => {
     };
 
     async function showMnemonic() {
-        if (!keymaster) {
+        if (!walletProvider) {
             return;
         }
         try {
-            const response = await keymaster.decryptMnemonic();
+            const response = await walletProvider.decryptMnemonic();
             setMnemonicString(response);
         } catch (error: any) {
             setError(error);
@@ -163,18 +167,25 @@ const WalletTab = () => {
     }
 
     async function downloadWallet() {
-        if (!keymaster) {
+        if (!keymaster || !walletProvider) {
             return;
         }
         try {
-            const wallet = await keymaster.exportEncryptedWallet();
-            const walletJSON = JSON.stringify(wallet, null, 4);
+            const wallet = await keymaster.loadWallet();
+            const provider = await walletProvider.backupWallet();
+            const bundle: MdipWalletBundle = {
+                version: 1,
+                type: "mdip-wallet-bundle",
+                keymaster: wallet,
+                provider,
+            };
+            const walletJSON = JSON.stringify(bundle, null, 4);
             const blob = new Blob([walletJSON], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'mdip-wallet.json';
+            link.download = 'mdip-wallet-bundle.json';
             link.click();
 
             URL.revokeObjectURL(url);
@@ -208,8 +219,8 @@ const WalletTab = () => {
             return;
         }
         try {
-            await keymaster.backupWallet();
-            setSuccess("Wallet backup successful");
+            const did = await keymaster.backupWallet();
+            setSuccess(`Wallet backup DID:\n${did}`);
         } catch (error: any) {
             setError(error);
         }

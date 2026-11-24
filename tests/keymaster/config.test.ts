@@ -11,6 +11,7 @@ const CONFIG_ENV_KEYS = [
     'KC_KEYMASTER_DB',
     'KC_KEYMASTER_JSON_LIMIT',
     'KC_ENCRYPTED_PASSPHRASE',
+    'KC_WALLET_PROVIDER_PASSPHRASE',
     'KC_DEFAULT_REGISTRY',
     'KC_KEYMASTER_DID_PREFIX',
     'KC_KEYMASTER_TRUST_PROXY',
@@ -56,7 +57,7 @@ describe('keymaster server config', () => {
             nodeID: 'node',
             db: 'json',
             jsonLimit: '4mb',
-            keymasterPassphrase: 'passphrase',
+            walletProviderPassphrase: 'passphrase',
             defaultRegistry: undefined,
             didPrefix: undefined,
             keymasterTrustProxy: false,
@@ -96,7 +97,7 @@ describe('keymaster server config', () => {
             nodeID: 'node',
             db: 'redis',
             jsonLimit: '8mb',
-            keymasterPassphrase: 'passphrase',
+            walletProviderPassphrase: 'passphrase',
             defaultRegistry: 'local',
             didPrefix: 'did:mdip',
             keymasterTrustProxy: true,
@@ -163,7 +164,7 @@ describe('keymaster server config', () => {
             .toThrow('KC_NODE_ID is required');
         await expect(importConfig({ KC_ENCRYPTED_PASSPHRASE: '' }))
             .rejects
-            .toThrow('KC_ENCRYPTED_PASSPHRASE is required');
+            .toThrow('KC_WALLET_PROVIDER_PASSPHRASE is required');
         await expect(importConfig({ KC_KEYMASTER_DB: 'memory' }))
             .rejects
             .toThrow('Invalid KC_KEYMASTER_DB "memory", expected redis, json, mongodb, sqlite, or postgres');

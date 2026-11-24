@@ -15,7 +15,7 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_NODE_ID` | required | Node identity name to create if missing and resolve at startup |
 | `KC_KEYMASTER_DB` | json | Wallet database adapter, must be `redis`, `json`, `mongodb`, `sqlite`, or `postgres` |
 | `KC_KEYMASTER_JSON_LIMIT` | 4mb | Maximum JSON request-body size accepted by the API |
-| `KC_ENCRYPTED_PASSPHRASE` | required | Passphrase used to encrypt and decrypt the server wallet |
+| `KC_WALLET_PROVIDER_PASSPHRASE` | required | Passphrase for the built-in mnemonic wallet provider state |
 | `KC_DEFAULT_REGISTRY` | hyperswarm | Default registry to use when creating DIDs |
 | `KC_KEYMASTER_DID_PREFIX` | (empty) | Optional `did:<method>` prefix embedded in new signed create operations. Method names use only lowercase letters and digits |
 | `KC_KEYMASTER_SERVE_CLIENT` | true | Serve the Keymaster web client from the API process |
@@ -30,3 +30,6 @@ This service is also useful when clients share a wallet, such as the `kc` CLI an
 | `KC_REDIS_URL` | redis://localhost:6379 | Redis connection string when `KC_KEYMASTER_DB=redis` |
 | `KC_POSTGRES_URL` | postgresql://mdip:mdip@localhost:5432/mdip | PostgreSQL connection string when `KC_KEYMASTER_DB=postgres` |
 | `KC_LOG_LEVEL` | info | Log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, or `silent` |
+
+`KC_ENCRYPTED_PASSPHRASE` remains accepted as a fallback when
+`KC_WALLET_PROVIDER_PASSPHRASE` is unset. New deployments should use the provider variable.

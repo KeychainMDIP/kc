@@ -1,10 +1,10 @@
 import { jest } from '@jest/globals';
 import sharp from 'sharp';
 import Gatekeeper from '@mdip/gatekeeper';
+import { createTestKeymaster } from './testUtils.ts';
 import Keymaster, { DmailTags } from '@mdip/keymaster';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import HeliaClient from '@mdip/ipfs/helia';
 import { mockSchema } from './helper.ts';
 
@@ -27,12 +27,7 @@ beforeEach(() => {
         ipfs,
         registries: ['local', 'hyperswarm', 'TFTC'],
     });
-    keymaster = new Keymaster({
-        gatekeeper,
-        wallet: new WalletJsonMemory(),
-        cipher: new CipherNode(),
-        passphrase: 'passphrase',
-    });
+    keymaster = createTestKeymaster(gatekeeper, new CipherNode()).keymaster;
 });
 
 afterEach(() => {

@@ -7,8 +7,8 @@ import { open, Database } from 'sqlite';
 import WalletSQLite from '@mdip/keymaster/wallet/sqlite';
 import { WalletFile } from '@mdip/keymaster/types';
 
-const original: WalletFile = { version: 1, seed: {}, counter: 0, ids: {} };
-const replacement: WalletFile = { ...original, counter: 1 };
+const original: WalletFile = { version: 2, provider: { type: 'test', walletFingerprint: 'test' }, ids: {} };
+const replacement: WalletFile = { ...original, names: { example: 'did:test:example' } };
 
 describe('SQLite wallet storage', () => {
     let tempDir: string;

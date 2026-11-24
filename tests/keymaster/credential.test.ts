@@ -4,17 +4,17 @@ import Keymaster from '@mdip/keymaster';
 import { VerifiableCredential } from '@mdip/keymaster/types';
 import CipherNode from '@mdip/cipher/node';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory';
-import WalletJsonMemory from '@mdip/keymaster/wallet/json-memory';
 import { copyJSON } from '@mdip/common/utils';
 import { InvalidDIDError, ExpectedExceptionError, UnknownIDError } from '@mdip/common/errors';
 import HeliaClient from '@mdip/ipfs/helia';
 import { TestHelper, mockJson, mockSchema } from './helper.ts';
+import { createTestKeymaster } from './testUtils.ts';
 
 let ipfs: HeliaClient;
 let gatekeeper: Gatekeeper;
-let wallet: WalletJsonMemory;
 let cipher: CipherNode;
 let keymaster: Keymaster;
+let walletProvider: import('../../packages/keymaster/src/provider/mnemonic-hd.ts').default;
 let helper: TestHelper;
 
 beforeAll(async () => {
@@ -31,9 +31,8 @@ afterAll(async () => {
 beforeEach(() => {
     const db = new DbJsonMemory('test');
     gatekeeper = new Gatekeeper({ db, ipfs, registries: ['local', 'hyperswarm', 'TFTC'] });
-    wallet = new WalletJsonMemory();
     cipher = new CipherNode();
-    keymaster = new Keymaster({ gatekeeper, wallet, cipher, passphrase: 'passphrase' });
+    ({ keymaster, walletProvider } = createTestKeymaster(gatekeeper, cipher));
     helper = new TestHelper(keymaster);
 });
 
@@ -684,12 +683,8 @@ describe('updateCredential', () => {
         const schema = await keymaster.createSchema(mockSchema);
         const did = await keymaster.issueCredential(await keymaster.bindCredential(schema, userDid));
         const credential = (await keymaster.getCredential(did))!;
-        const fetchKeyPair = keymaster.fetchKeyPair.bind(keymaster);
-        jest.spyOn(keymaster, 'fetchKeyPair')
-            .mockImplementationOnce(fetchKeyPair)
-            .mockResolvedValueOnce(null);
-
-        await expect(keymaster.updateCredential(did, credential)).rejects.toThrow('Keymaster: No valid sender keypair');
+        jest.spyOn(walletProvider, 'encrypt').mockRejectedValueOnce(new Error('provider unavailable'));
+        await expect(keymaster.updateCredential(did, credential)).rejects.toThrow('provider unavailable');
     });
 
     it('should keep signing and encryption bound to the validated issuer if the current ID changes', async () => {

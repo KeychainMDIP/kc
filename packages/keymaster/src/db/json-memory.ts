@@ -1,6 +1,6 @@
-import { StoredWallet, WalletBase } from '../types.js';
+import { KeymasterStore, StoredWallet } from '../types.js';
 
-export default class WalletJsonMemory implements WalletBase {
+export default class WalletJsonMemory implements KeymasterStore {
     walletCache: string | null = null;
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
