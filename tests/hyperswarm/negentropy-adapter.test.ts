@@ -3,6 +3,7 @@ import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentrop
 import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { Operation } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
+import { jest } from '@jest/globals';
 
 const DAY_SECONDS = 24 * 60 * 60;
 const h = (c: string) => c.repeat(64);
@@ -76,6 +77,7 @@ describe('NegentropyAdapter', () => {
 
         expect(adapter.getLastWindowStats()).toBeNull();
         expect(adapter.getLastSessionStats()).toBeNull();
+        expect(adapter.getCurrentSnapshot()).toBeNull();
     });
 
     it('loads and builds from store', async () => {
@@ -768,7 +770,12 @@ describe('NegentropyAdapter', () => {
             deferInitialBuild: true,
         });
 
-        (adapterB as any).respond = async () => null;
+        const createPeerEngine = adapterB.createEngineForSnapshot.bind(adapterB);
+        jest.spyOn(adapterB, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createPeerEngine(snapshot);
+            jest.spyOn(engine, 'respond').mockResolvedValue(null);
+            return engine;
+        });
 
         const session = await adapterA.runWindowedSessionWithPeer(adapterB, {
             nowTs,
