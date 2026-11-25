@@ -26,6 +26,7 @@ import type {
 } from './ordered-catchup-coordinator.js';
 import type {
     HyperMessage,
+    NegCloseOutcome,
     PingMessage,
 } from './protocol-messages.js';
 import type { MediatorSyncStats } from './sync-stats.js';
@@ -506,21 +507,18 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         }
     }
 
-    async function handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
+    async function handleNegentropySessionClosed(peerKey: string, outcome: NegCloseOutcome): Promise<void> {
         options.getOrderedCatchupCoordinator().finishTransition(peerKey);
-        if (reason === 'complete') recoveryRepairs.delete(peerKey);
-        if (recoveryRepairs.has(peerKey)) {
+        if (outcome === 'complete') recoveryRepairs.delete(peerKey);
+        const recoveryPending = recoveryRepairs.has(peerKey);
+        if (recoveryPending) {
             const conn = options.getConnection(peerKey);
             if (conn) {
                 conn.negentropySynced = false;
-                if (reason === 'gatekeeper_processing_unavailable') conn.lastNegentropyAttemptAt = 0;
+                if (outcome === 'busy') conn.lastNegentropyAttemptAt = 0;
             }
         }
-        if (accepting
-            && reason !== 'ordered_catchup_active'
-            && reason !== 'gatekeeper_reset'
-            && reason !== 'snapshot_busy'
-            && reason !== 'sync_busy') {
+        if (accepting && (outcome !== 'busy' || recoveryPending)) {
             await schedulePreferredSyncs();
         }
     }
@@ -741,8 +739,8 @@ export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
         handleOrderedCatchupFailure(outcome: OrderedCatchupOutcome): Promise<void> {
             return tracked(() => handleOrderedCatchupFailure(outcome), undefined);
         },
-        handleNegentropySessionClosed(peerKey: string, reason: string): Promise<void> {
-            return tracked(() => handleNegentropySessionClosed(peerKey, reason), undefined);
+        handleNegentropySessionClosed(peerKey: string, outcome: NegCloseOutcome): Promise<void> {
+            return tracked(() => handleNegentropySessionClosed(peerKey, outcome), undefined);
         },
         canStartBackgroundPrebuild(): boolean {
             return accepting && !orderedCatchupPending && !options.getOrderedCatchupCoordinator().hasActiveOutbound();

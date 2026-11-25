@@ -48,7 +48,8 @@ interface WireBody {
     sessionId?: string;
     windowSeq?: number;
     round?: number;
-    reason?: string;
+    outcome?: string;
+    detail?: string;
     window?: WireWindow;
     continuation?: Cursor | null;
     previousContinuation?: Cursor | null;
@@ -477,7 +478,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             type: 'neg_close',
             sessionId: opens[0].body.sessionId,
             windowSeq: currentWindowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         },
     });
 
@@ -767,10 +768,10 @@ describe('hyperswarm mediator behavior', () => {
         expect((await driver.storeB.getByIds([fixtures.branchA.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
         ))).toBe(false);
 
         await driver.reconnect();
@@ -825,7 +826,7 @@ describe('hyperswarm mediator behavior', () => {
             },
         }, { timeoutMs: 10_000 });
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'incomplete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'incomplete' }),
         }));
 
         await new Promise(resolve => setTimeout(resolve, 1_100));
@@ -850,10 +851,10 @@ describe('hyperswarm mediator behavior', () => {
                 .toBe(Number.MAX_SAFE_INTEGER);
         }
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
         ))).toBe(false);
 
         await driver.reconnect();
@@ -912,10 +913,10 @@ describe('hyperswarm mediator behavior', () => {
         expect((await driver.storeB.getByIds([fixtures.deactivation.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
         ))).toBe(false);
 
         await driver.reconnect();

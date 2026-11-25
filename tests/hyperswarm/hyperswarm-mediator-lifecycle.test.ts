@@ -909,7 +909,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: initialOpen.sessionId,
             windowSeq: initialOpen.windowSeq,
-            reason: 'interrupted',
+            outcome: 'failed', detail: 'interrupted',
         })));
         await peer.pair.pumpUntilIdle();
         expect(running.node.run(
@@ -1437,7 +1437,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             sessionId,
             windowSeq,
             round: 1,
-            reason: 'complete',
+            outcome: 'complete',
         })));
         await peer.pair.pumpUntilIdle();
         await settle();

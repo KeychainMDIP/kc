@@ -176,7 +176,7 @@ function buildNegentropyCoordinator(
         onProtocolViolation: (peerKey, reason, connection) =>
             transport.reportProtocolViolation(peerKey, reason, connection),
         terminatePeerConnection: (peerKey, reason) => transport.terminatePeer(peerKey, reason),
-        onSessionClosed: (peerKey, reason) => peerSyncCoordinator.handleNegentropySessionClosed(peerKey, reason),
+        onSessionClosed: (peerKey, outcome) => peerSyncCoordinator.handleNegentropySessionClosed(peerKey, outcome),
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
     });
 }

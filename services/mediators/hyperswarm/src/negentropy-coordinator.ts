@@ -63,6 +63,7 @@ import type {
     HyperMessageBase,
     NativeNegentropyFrame,
     NegCloseMessage,
+    NegCloseOutcome,
     NegentropyRoundOutcome,
     NegMsgMessage,
     NegOpenMessage,
@@ -78,6 +79,36 @@ import type { OperationPageBudget } from './operation-page-budget.js';
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const MAX_UNRESOLVED_OPERATIONS = 1_000;
 const MAX_UNRESOLVED_BYTES = 2 * 1024 * 1024;
+
+const PEER_CLOSE_OUTCOME_BY_REASON = {
+    complete: 'complete',
+    busy: 'busy',
+    sync_busy: 'busy',
+    ordered_catchup_active: 'busy',
+    gatekeeper_processing_unavailable: 'busy',
+    gatekeeper_reset: 'busy',
+    snapshot_busy: 'busy',
+    round_limit: 'round_limit',
+    max_rounds_reached: 'round_limit',
+    incomplete: 'incomplete',
+    unresolved_limit_exceeded: 'incomplete',
+    unresolved_operations: 'incomplete',
+    ops_push_output_capacity: 'incomplete',
+    ops_push_import_capacity: 'incomplete',
+    missing_requested_operations: 'incomplete',
+    ops_push_import_retryable: 'incomplete',
+    failed: 'failed',
+    snapshot_build_failed: 'failed',
+    ops_offer_lookup_failed: 'failed',
+    ops_push_lookup_failed: 'failed',
+    idle_timeout: 'failed',
+} as const satisfies Record<string, NegCloseOutcome>;
+
+type PeerCloseReason = keyof typeof PEER_CLOSE_OUTCOME_BY_REASON;
+
+function peerCloseOutcome(reason: string): NegCloseOutcome {
+    return PEER_CLOSE_OUTCOME_BY_REASON[reason as PeerCloseReason] ?? 'failed';
+}
 
 type NegentropyMessage =
     | NegOpenMessage
@@ -185,7 +216,7 @@ interface NegentropyCoordinatorOptions {
     canStartBackgroundPrebuild(): boolean;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
     terminatePeerConnection(peerKey: string, reason: string): void;
-    onSessionClosed(peerKey: string, reason: string): void | Promise<void>;
+    onSessionClosed(peerKey: string, outcome: NegCloseOutcome): void | Promise<void>;
     onIndexRefreshed(source: string, sync: BootstrapResult): Promise<void>;
 }
 
@@ -407,7 +438,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             sessionId: msg.sessionId,
             windowSeq: msg.windowSeq,
             round: msg.round,
-            reason: 'sync_busy',
+            outcome: 'busy',
+            detail: 'sync_busy',
         })) {
             if (marker === 'slot') {
                 conn.negentropyBusyGeneration = markerValue;
@@ -449,31 +481,29 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    function closePeerSession(peerKey: string, reason: string, locallyInterrupted = false): void {
+    function closePeerSession(peerKey: string, reason: string): void {
         const session = peerSessions.get(peerKey);
         if (!session) {
             return;
         }
 
-        const retryOnNextPeriodic = locallyInterrupted || session.initiator
-            && (reason === 'ordered_catchup_active' || reason === 'sync_busy');
+        const outcome = peerCloseOutcome(reason);
+        const retryOnNextPeriodic = outcome === 'busy';
         peerSessions.delete(peerKey);
         releaseSessionSlot(session);
         addAggregateSample(options.syncStats.syncDurationMs, Date.now() - session.startedAt);
         const conn = options.getConnection(peerKey);
         if (conn) {
             conn.lastNegentropyAttemptAt = retryOnNextPeriodic ? 0 : Date.now();
-            const localInterruption = reason === 'gatekeeper_reset'
-                || reason === 'gatekeeper_processing_unavailable';
-            if (!session.initiator && reason !== 'complete' && !retryOnNextPeriodic && !localInterruption) {
+            if (!session.initiator && outcome !== 'complete' && outcome !== 'busy') {
                 conn.negentropyRetryAfter = Date.now() + options.repairIntervalMs;
             }
-            if (reason === 'complete') {
+            if (outcome === 'complete') {
                 conn.negentropyRetryAfter = 0;
                 conn.negentropyBusyRetryAfter = 0;
             }
             options.syncStats.negentropySessionsClosed += 1;
-            if (reason === 'complete') {
+            if (outcome === 'complete') {
                 conn.negentropySynced = true;
                 options.syncStats.negentropySessionsCompleted += 1;
             }
@@ -485,7 +515,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
         let callback: Promise<void>;
         try {
-            callback = Promise.resolve(options.onSessionClosed(peerKey, reason));
+            callback = Promise.resolve(options.onSessionClosed(peerKey, outcome));
         }
         catch (error) {
             callback = Promise.reject(error);
@@ -498,7 +528,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 );
             });
         void trackWork(callback);
-        if (reason !== 'snapshot_busy') {
+        if (outcome !== 'busy') {
             maybeStartBackgroundPrebuild('session_closed');
         }
 
@@ -511,6 +541,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             pendingHave: session.pendingHaveIds.size,
             pendingNeed: session.pendingNeedIds.size,
             unresolvedNeed: session.unresolvedNeedIds.size,
+            outcome,
             reason,
         }, 'peer sync session closed');
     }
@@ -1388,17 +1419,19 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     function sendNegClose(
         peerKey: string,
         session: PeerSyncSession,
-        reason: string,
+        reason: PeerCloseReason,
         windowSeq = session.windowSeq ?? 0,
     ): boolean {
         session.localClosed = true;
         const continuation = buildWindowContinuation(session);
+        const outcome = peerCloseOutcome(reason);
         const closeMsg: NegCloseMessage = {
             ...options.createBaseMessage('neg_close'),
             sessionId: session.sessionId,
             windowSeq,
             round: session.rounds,
-            reason,
+            outcome,
+            ...(reason === outcome ? {} : { detail: reason }),
             ...(continuation === undefined ? {} : { continuation }),
         };
 
@@ -1910,7 +1943,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     sessionId: remoteSessionId,
                     windowSeq: remoteWindowSeq,
                     round: Number.isInteger(msg.round) ? msg.round : 0,
-                    reason: options.importPipeline.available ? 'ordered_catchup_active' : 'gatekeeper_processing_unavailable',
+                    outcome: 'busy',
+                    detail: options.importPipeline.available
+                        ? 'ordered_catchup_active'
+                        : 'gatekeeper_processing_unavailable',
                 });
             log.debug(
                 {
@@ -2468,11 +2504,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             || !isCurrentSessionWindow(peerKey, session, msg.windowSeq, 'neg_close')) {
             return;
         }
-        const mayOmitContinuation = msg.reason === 'sync_busy'
-            || msg.reason === 'ordered_catchup_active'
-            || msg.reason === 'gatekeeper_processing_unavailable'
-            || msg.reason === 'snapshot_busy'
-            || msg.reason === 'snapshot_build_failed';
+        const mayOmitContinuation = msg.outcome === 'busy' || msg.outcome === 'failed';
         if (!Object.prototype.hasOwnProperty.call(msg, 'continuation') && !mayOmitContinuation) {
             reportProtocolViolation(peerKey, 'active neg_close is missing continuation');
             return;
@@ -2482,7 +2514,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, 'neg_close changes the active window continuation');
             return;
         }
-        if (msg.reason === 'complete' && session.windowIncomplete) {
+        if (msg.outcome === 'complete' && session.windowIncomplete) {
             if (!sendNegClose(peerKey, session, 'incomplete')) {
                 closePeerSession(peerKey, 'send_neg_close_failed');
                 return;
@@ -2490,19 +2522,19 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             closePeerSession(peerKey, 'incomplete');
             return;
         }
-        if (msg.reason === 'complete' && ((session.initiator && !session.reconciliationComplete)
+        if (msg.outcome === 'complete' && ((session.initiator && !session.reconciliationComplete)
             || session.activeOffer
             || session.localRequest
             || session.receivedRequest)) {
             reportProtocolViolation(peerKey, 'premature negentropy completion');
             return;
         }
-        if (session.initiator && msg.reason === 'max_rounds_reached'
+        if (session.initiator && msg.outcome === 'round_limit'
             && (session.activeOffer || session.localRequest || session.receivedRequest)) {
             reportProtocolViolation(peerKey, 'premature negentropy round-cap close');
             return;
         }
-        if (session.initiator && msg.reason === 'max_rounds_reached') {
+        if (session.initiator && msg.outcome === 'round_limit') {
             if (session.windowIncomplete) {
                 if (!sendNegClose(peerKey, session, 'incomplete')) {
                     closePeerSession(peerKey, 'send_neg_close_failed');
@@ -2517,7 +2549,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return;
             }
         }
-        if (msg.reason === 'complete') {
+        if (msg.outcome === 'complete') {
             if (!session.initiator && !session.reconciliationComplete) {
                 session.reconciliationComplete = true;
                 finalizeCurrentWindowStats(session, { completed: true, cappedByRounds: false });
@@ -2545,7 +2577,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return;
             }
         }
-        closePeerSession(peerKey, msg.reason || 'remote_closed');
+        log.debug(
+            { peer: shortName(peerKey), outcome: msg.outcome, detail: msg.detail },
+            'remote negentropy session closed',
+        );
+        closePeerSession(peerKey, msg.outcome);
     }
 
     async function startSession(
@@ -2718,7 +2754,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    function reset(reason?: string): void {
+    function reset(reason?: 'gatekeeper_reset' | 'gatekeeper_processing_unavailable'): void {
         for (const peerKey of peerSessions.keys()) {
             options.bulkReads.cancel(peerKey);
         }
@@ -2830,7 +2866,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         interruptForOrderedCatchup(): void {
             for (const [peerKey, session] of peerSessions) {
                 sendNegClose(peerKey, session, 'ordered_catchup_active');
-                closePeerSession(peerKey, 'ordered_catchup_active', true);
+                closePeerSession(peerKey, 'ordered_catchup_active');
             }
         },
         removePeer(peerKey: string, reason: string): void {

@@ -5,7 +5,7 @@ import type {
     PingMessage,
     QueueMessage,
 } from './protocol-messages.js';
-import { WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
+import { NEG_CLOSE_OUTCOMES, WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
 import { NEG_SYNC_ID_RE } from './negentropy/protocol.js';
 import {
     validateIdList,
@@ -38,6 +38,7 @@ const MESSAGE_TYPES = new Set<HyperMessage['type']>([
     'ops_ack',
     'neg_close',
 ]);
+const NEG_CLOSE_OUTCOME_SET = new Set<string>(NEG_CLOSE_OUTCOMES);
 
 type ProtocolValidationResult<T> = TransferValidationResult<T>;
 
@@ -49,7 +50,7 @@ const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     ordered_catchup_done: new Set(['type', 'sessionId']),
     neg_open: new Set(['type', 'sessionId', 'windowSeq', 'window', 'round', 'frame', 'previousContinuation']),
     neg_msg: new Set(['type', 'sessionId', 'windowSeq', 'round', 'frame', 'continuation']),
-    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'reason', 'continuation']),
+    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'outcome', 'detail', 'continuation']),
     ops_offer: new Set(['type', 'sessionId', 'transferId', 'ids']),
     ops_req: new Set(['type', 'sessionId', 'transferId', 'ids', 'incomplete']),
     ops_push: new Set(['type', 'sessionId', 'transferId', 'page', 'hasMore', 'operations']),
@@ -272,11 +273,15 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
                 ? validateSafeInteger(message.page, 'page')
                 : null);
     }
-    return validateSafeInteger(message.windowSeq, 'windowSeq')
-        ?? validateSafeInteger(message.round, 'round')
-        ?? (message.type === 'neg_close' && message.reason !== undefined
-            ? validateBoundedString(message.reason, 'reason')
-            : null);
+    const sequenceError = validateSafeInteger(message.windowSeq, 'windowSeq')
+        ?? validateSafeInteger(message.round, 'round');
+    if (sequenceError || message.type !== 'neg_close') {
+        return sequenceError;
+    }
+    if (typeof message.outcome !== 'string' || !NEG_CLOSE_OUTCOME_SET.has(message.outcome)) {
+        return `outcome must be one of ${NEG_CLOSE_OUTCOMES.join(', ')}`;
+    }
+    return message.detail === undefined ? null : validateBoundedString(message.detail, 'detail');
 }
 
 export function validateHyperMessageEnvelope(

@@ -29,7 +29,8 @@ interface WireMessage {
     direction: TransportDirection;
     body: {
         type: string;
-        reason?: string;
+        outcome?: string;
+        detail?: string;
         sessionId?: string;
         windowSeq?: string;
         round?: number;
@@ -99,7 +100,7 @@ function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
         direction: finalOpen.direction,
         body: {
             type: 'neg_close', continuation: null,
-            reason: 'complete',
+            outcome: 'complete',
             sessionId: finalOpen.body.sessionId,
             windowSeq: finalOpen.body.windowSeq,
         },
@@ -220,7 +221,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             await nextTurn();
             await nextTurn();
             const closesWhileBlocked = decodeWire(driver.transport).filter(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ));
             const persistedWhileBlocked = await driver.storeB.count();
 
@@ -233,7 +234,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
             expect(await driver.storeB.count()).toBe(expectedIds.length);
             expect(decodeWire(driver.transport).some(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ))).toBe(true);
         },
     );
@@ -371,7 +372,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(await driver.storeB.has(operationId(asset))).toBe(true);
         expect(await driver.storeB.has(operationId(controller))).toBe(true);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
     });
 
@@ -404,7 +405,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const successfulCloses = decodeWire(driver.transport).filter(message => (
             message.direction === 'b-to-a'
             && message.body.type === 'neg_close'
-            && message.body.reason === 'complete'
+            && message.body.outcome === 'complete'
         ));
 
         expect(successfulCloses).toHaveLength(1);
@@ -429,7 +430,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(await gatekeeperIds(receiver.gatekeeper)).toEqual(expectedIds);
         expect(await driver.storeB.count()).toBe(1);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
         ))).toBe(false);
         assertCompletedNegentropyExchange(decodeWire(driver.transport));
     });
@@ -454,7 +455,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         });
         expect(decodeWire(driver.transport).some(message => message.body.type === 'ops_ack')).toBe(false);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'ops_push_import_retryable'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'ops_push_import_retryable'
         ))).toBe(true);
 
         await driver.reconnect();
@@ -465,7 +466,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
         expect(await driver.storeB.count()).toBe(1);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
     });
 
@@ -499,10 +500,10 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const [stored] = await driver.storeB.getByIds(expectedIds);
         expect(stored.syncOrder).not.toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
         ))).toBe(false);
     });
 
@@ -539,7 +540,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
             expect(await driver.storeB.count()).toBe(1);
             expect(decodeWire(driver.transport).some(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ))).toBe(true);
         },
     );
@@ -579,7 +580,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(processResults.slice(1).every(result => (result.added ?? 0) === 0)).toBe(true);
         expect(await driver.storeB.count()).toBe(1);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
     });
 
@@ -818,7 +819,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             message.direction === 'b-to-a' && message.sequence > finalCatchupSequence
         ))).toBe(true);
         expect(handoffMessages.some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'ordered_catchup_active'
+            message.body.type === 'neg_close' && message.body.outcome === 'busy' && message.body.detail === 'ordered_catchup_active'
         ))).toBe(false);
         assertCompletedNegentropyExchange(handoffMessages);
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);

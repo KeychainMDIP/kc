@@ -1024,7 +1024,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close',
                 sessionId: open.sessionId,
                 windowSeq: open.windowSeq,
-                reason: 'ordered_catchup_active',
+                outcome: 'busy', detail: 'ordered_catchup_active',
             }),
         ]);
         expect(protocolNode.node.run(
@@ -1077,7 +1077,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
 
         expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+            expect.objectContaining({ type: 'neg_close', outcome: 'busy', detail: 'ordered_catchup_active' }),
         ]));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
@@ -1104,7 +1104,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.schedulePreferredSyncs());
 
         expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+            expect.objectContaining({ type: 'neg_close', outcome: 'busy', detail: 'ordered_catchup_active' }),
         ]));
         expect(decodeWrites(ready.pair)).toEqual(expect.arrayContaining([
             expect.objectContaining({ type: 'ordered_catchup_req' }),
@@ -1161,7 +1161,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(count).toHaveBeenCalledTimes(2);
         expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+            expect.objectContaining({ type: 'neg_close', outcome: 'busy', detail: 'ordered_catchup_active' }),
         ]));
         expect(decodeWrites(smaller.pair)).toHaveLength(0);
         expect(decodeWrites(larger.pair)).toEqual(expect.arrayContaining([
@@ -1207,7 +1207,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.maybeStartPeerSync(ready.peerKey));
 
         expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+            expect.objectContaining({ type: 'neg_close', outcome: 'busy', detail: 'ordered_catchup_active' }),
         ]));
         expect(decodeWrites(ready.pair).filter(message => message.type === 'ordered_catchup_req')).toHaveLength(0);
         expect(protocolNode.node.run(
@@ -1242,7 +1242,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             () => protocolNode.node.mediator.__test.getConnectionState(fallback.peerKey)?.activeSession,
         )).toMatchObject({ mode: 'negentropy', sessionId: resumed.sessionId });
         expect(decodeWrites(fallback.pair)).not.toEqual(expect.arrayContaining([
-            expect.objectContaining({ type: 'neg_close', sessionId: resumed.sessionId, reason: 'sync_busy' }),
+            expect.objectContaining({ type: 'neg_close', sessionId: resumed.sessionId, outcome: 'busy', detail: 'sync_busy' }),
         ]));
     });
 
@@ -1279,7 +1279,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(decodeWrites(ready.pair)).toHaveLength(0);
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(fallback.peerKey, remoteOpen));
             expect(decodeWrites(fallback.pair)).toEqual(expect.arrayContaining([
-                expect.objectContaining({ type: 'neg_close', reason: 'ordered_catchup_active' }),
+                expect.objectContaining({ type: 'neg_close', outcome: 'busy', detail: 'ordered_catchup_active' }),
             ]));
             resume();
             await queued;
@@ -1367,7 +1367,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close', continuation: null,
                 sessionId: firstOpen!.sessionId,
                 windowSeq: firstOpen!.windowSeq,
-                reason: 'ordered_catchup_active',
+                outcome: 'busy', detail: 'ordered_catchup_active',
             }));
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.maybeStartPeerSync(peerKey, 'periodic'),
@@ -1399,7 +1399,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close',
             sessionId: firstOpen!.sessionId,
             windowSeq: firstOpen!.windowSeq,
-            reason: 'ordered_catchup_active',
+            outcome: 'busy', detail: 'ordered_catchup_active',
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, peerPing({
             version: 1,
@@ -1528,18 +1528,18 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair).filter(message => (
             message.type === 'neg_close'
             && message.sessionId === 'remote-session'
-            && message.reason === 'sync_busy'
+            && message.outcome === 'busy' && message.detail === 'sync_busy'
         ))).toEqual([expect.objectContaining({
             type: 'neg_close',
             sessionId: 'remote-session',
-            reason: 'sync_busy',
+            outcome: 'busy', detail: 'sync_busy',
         })]);
 
         const writesBefore = pair.transcript.length;
         const importsBefore = protocolNode.node.gatekeeperClient.importBatch.mock.calls.length;
         for (const message of [
             { type: 'neg_msg', continuation: null, sessionId: 'stale', windowSeq: open.windowSeq, frame: open.frame },
-            { type: 'neg_close', sessionId: 'stale', windowSeq: open.windowSeq, reason: 'complete' },
+            { type: 'neg_close', sessionId: 'stale', windowSeq: open.windowSeq, outcome: 'complete' },
         ]) {
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.receiveMsg(peerKey, message),
@@ -1555,7 +1555,8 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'remote_closed',
+            outcome: 'failed',
+            detail: 'remote_closed',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -1563,8 +1564,8 @@ describe('hyperswarm mediator protocol characterization', () => {
     });
 
     it.each(['sync_busy', 'ordered_catchup_active'])(
-        'applies the inbound repair delay when the initiator closes with %s',
-        async reason => {
+        'keeps an inbound busy close non-punitive when its detail is %s',
+        async detail => {
             const open = await createRemoteOpen();
             const protocolNode = await createNode({ keyByte: 0x33 });
             const { peerKey, pair } = attachPeer(protocolNode, {});
@@ -1576,7 +1577,8 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: open.sessionId,
                 windowSeq: open.windowSeq,
                 round: 1,
-                reason,
+                outcome: 'busy',
+                detail,
             }));
             await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                 ...open,
@@ -1586,11 +1588,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             expect(pair.connectionA.destroyed).toBe(false);
             expect(protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
-            )).toBeNull();
-            expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
+            )).toEqual({ mode: 'negentropy', sessionId: 'retry-before-deadline' });
+            expect(decodeWrites(pair)).not.toContainEqual(expect.objectContaining({
                 type: 'neg_close',
                 sessionId: 'retry-before-deadline',
-                reason: 'sync_busy',
             }));
         },
     );
@@ -1743,7 +1744,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
-            reason: 'complete',
+            outcome: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -1826,7 +1827,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'max_rounds_reached',
+            outcome: 'round_limit', detail: 'max_rounds_reached',
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);
@@ -1876,7 +1877,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair).filter(message => message.type === 'ops_req')).toHaveLength(1);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
-            reason: 'complete',
+            outcome: 'complete',
         }));
     });
 
@@ -2101,7 +2102,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'missing_requested_operations',
+            outcome: 'incomplete', detail: 'missing_requested_operations',
         }));
         expect(pair.connectionA.destroyed).toBe(false);
         expect(protocolNode.node.run(
@@ -2152,7 +2153,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair).some(message => message.type === 'ops_push')).toBe(false);
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -2209,7 +2210,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
     });
 
@@ -2259,7 +2260,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -2360,7 +2361,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'ops_offer_lookup_failed',
+            outcome: 'failed', detail: 'ops_offer_lookup_failed',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -2474,13 +2475,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close',
-            reason: 'sync_busy',
+            outcome: 'busy', detail: 'sync_busy',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -2548,7 +2549,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         );
 
         expect(decodeWrites(peerB.pair).filter(message => (
-            message.type === 'neg_close' && message.reason === 'sync_busy'
+            message.type === 'neg_close' && message.outcome === 'busy' && message.detail === 'sync_busy'
         ))).toHaveLength(1);
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerB.peerKey)?.activeSession,
@@ -2558,7 +2559,8 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: openA.sessionId,
             windowSeq: openA.windowSeq,
-            reason: 'remote_closed',
+            outcome: 'failed',
+            detail: 'remote_closed',
         }));
         await protocolNode.node.run(
             () => protocolNode.node.mediator.__test.receiveMsg(peerB.peerKey, openB),
@@ -2614,7 +2616,8 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: firstOpen.sessionId,
             windowSeq: firstOpen.windowSeq,
-            reason: 'remote_closed',
+            outcome: 'failed',
+            detail: 'remote_closed',
         }));
         await eventually(() => decodeWrites(second.pair).some(message => message.type === 'neg_open'));
 
@@ -3243,7 +3246,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toEqual({ mode: 'negentropy', sessionId: open.sessionId });
         expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(2);
         expect(decodeWrites(pair).some(message => (
-            message.type === 'neg_close' && message.reason === 'complete'
+            message.type === 'neg_close' && message.outcome === 'complete'
         ))).toBe(false);
     });
 
@@ -3306,7 +3309,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -3368,7 +3371,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
     });
 
@@ -3440,7 +3443,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -3498,7 +3501,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'unresolved_operations',
+            outcome: 'incomplete', detail: 'unresolved_operations',
         }));
     });
 
@@ -3579,7 +3582,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'unresolved_limit_exceeded',
+            outcome: 'incomplete', detail: 'unresolved_limit_exceeded',
         }));
         expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(4);
     });
@@ -3667,7 +3670,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'unresolved_limit_exceeded',
+            outcome: 'incomplete', detail: 'unresolved_limit_exceeded',
         }));
         expect(decodeWrites(pair).filter(message => message.type === 'ops_ack')).toHaveLength(4);
     });
@@ -3725,7 +3728,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -3774,7 +3777,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'max_rounds_reached',
+            outcome: 'round_limit', detail: 'max_rounds_reached',
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'neg_open')).toHaveLength(1);
@@ -3782,7 +3785,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -3839,7 +3842,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -3869,7 +3872,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
@@ -3878,7 +3881,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'incomplete',
+            outcome: 'incomplete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -4024,7 +4027,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
     });
 
@@ -4080,7 +4083,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'unresolved_operations',
+            outcome: 'incomplete', detail: 'unresolved_operations',
         }));
     });
 
@@ -4121,7 +4124,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -4250,7 +4253,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: firstOpen.sessionId,
             windowSeq: finalOpen.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -4359,7 +4362,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     type: 'neg_close',
                     sessionId,
                     windowSeq: lastWindow.order,
-                    reason: 'complete',
+                    outcome: 'complete',
                 }));
             }
         };
@@ -4670,7 +4673,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close', continuation: null,
                 sessionId: remoteOpen.sessionId,
                 windowSeq: remoteOpen.windowSeq,
-                reason: 'complete',
+                outcome: 'complete',
             }));
             const engineCount = createEngine.mock.calls.length;
             releaseCount();
@@ -4780,7 +4783,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close', continuation: null,
                 sessionId: remoteOpen.sessionId,
                 windowSeq: remoteOpen.windowSeq,
-                reason: 'complete',
+                outcome: 'complete',
             }));
             releaseCount();
             await staleStart;
@@ -4849,7 +4852,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
                     windowSeq: remoteOpen.windowSeq,
-                    reason: 'ordered_catchup_active',
+                    outcome: 'busy', detail: 'ordered_catchup_active',
                 }),
             ]);
             expect(createEngine).not.toHaveBeenCalled();
@@ -4915,7 +4918,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
 
         expect(decodeWrites(pair).filter(message => message.type === 'neg_close').at(-1)).toMatchObject({
-            reason: 'max_rounds_reached',
+            outcome: 'round_limit', detail: 'max_rounds_reached',
         });
         expect(protocolNode.node.run(
             () => protocolNode.node.mediator.__test.getConnectionState(peerKey)?.activeSession,
@@ -4939,7 +4942,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close', continuation: null,
                 sessionId: open.sessionId,
                 windowSeq: open.windowSeq,
-                reason: 'max_rounds_reached',
+                outcome: 'round_limit', detail: 'max_rounds_reached',
             })),
         ));
 
@@ -4973,7 +4976,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 sessionId: open.sessionId,
                 windowSeq: open.windowSeq,
                 round: 1,
-                reason: 'complete',
+                outcome: 'complete',
             })),
         ));
         expect(protocolNode.node.run(
@@ -5011,7 +5014,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
 
         expect(pair.connectionA.destroyed).toBe(false);
@@ -5173,7 +5176,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
-            reason: 'max_rounds_reached',
+            outcome: 'round_limit', detail: 'max_rounds_reached',
         }));
 
         const splitWindow = buildRoundCapSplitWindow(reconciliationWindow(open))!;
@@ -5245,7 +5248,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
 
         expect((await protocolNode.store.getByIds([operationId]))[0].syncOrder)
@@ -5318,7 +5321,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: continuation.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
 
         expect(getByIds.mock.calls.filter(([ids]) => ids.includes(rejectedId))).toHaveLength(2);
@@ -5372,7 +5375,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'complete',
+            outcome: 'complete',
         }));
 
         expect(protocolNode.node.run(
@@ -5459,7 +5462,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 type: 'neg_close', continuation: null,
                 sessionId: open.sessionId,
                 windowSeq: open.windowSeq,
-                reason: 'complete',
+                outcome: 'complete',
             }),
         );
         let replacement: AttachedPeer | null = null;
@@ -5720,7 +5723,8 @@ describe('hyperswarm mediator protocol characterization', () => {
             type: 'neg_close', continuation: null,
             sessionId: open.sessionId,
             windowSeq: open.windowSeq,
-            reason: 'gatekeeper_backpressure',
+            outcome: 'busy',
+            detail: 'gatekeeper_backpressure',
         }));
 
         const retryAfter = capacityState!.orderedCatchupRetryAfter as number;
@@ -6461,7 +6465,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
                     windowSeq: remoteOpen.windowSeq,
-                    reason: 'ordered_catchup_active',
+                    outcome: 'busy', detail: 'ordered_catchup_active',
                 }),
             ]);
             expect(createEngine).not.toHaveBeenCalled();
@@ -6484,7 +6488,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                     type: 'neg_close',
                     sessionId: remoteOpen.sessionId,
                     windowSeq: remoteOpen.windowSeq,
-                    reason: 'ordered_catchup_active',
+                    outcome: 'busy', detail: 'ordered_catchup_active',
                 }),
             ]);
             expect(createEngine).not.toHaveBeenCalled();

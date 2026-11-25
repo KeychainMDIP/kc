@@ -59,6 +59,12 @@ carry `continuation: null` for an uncapped snapshot or its cursor when capped.
 The next `neg_open` repeats that value as `previousContinuation`; an immediate
 busy rejection may omit it because no snapshot was admitted.
 
+Every `neg_close` has one stable outcome: `complete`, `busy`, `round_limit`,
+`incomplete`, or `failed`. An optional `detail` is bounded diagnostic text and
+must not affect retry, repair, or synchronization state. Only `complete` marks
+the peer synchronized; `busy` retries without repair, `round_limit` may advance
+an exact split window, and `incomplete` or `failed` use normal repair.
+
 ## Ordered catch-up
 
 Ordered catch-up is optional. A client requests the first page without `after`;

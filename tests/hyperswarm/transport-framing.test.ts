@@ -36,7 +36,7 @@ describe('hyperswarm transport framing', () => {
 
     it('decodes multiple framed messages from one chunk', () => {
         const first = JSON.stringify({ type: 'neg_msg', continuation: null, frame: 'abc' });
-        const second = JSON.stringify({ type: 'neg_close', reason: 'complete' });
+        const second = JSON.stringify({ type: 'neg_close', outcome: 'complete' });
         const framed = Buffer.concat([encodeFramedMessage(first), encodeFramedMessage(second)]);
         const decoded = decodeFramedMessages(framed);
 
@@ -132,7 +132,7 @@ describe('hyperswarm transport framing', () => {
             sessionId: 'session-1',
             windowSeq: 0,
             round: 10,
-            reason: 'complete',
+            outcome: 'complete',
         });
         const result = decodeFramedMessages(Buffer.concat([encodeFramedMessage(opsPush), encodeFramedMessage(negClose)]));
         expect(result.error).toBeUndefined();

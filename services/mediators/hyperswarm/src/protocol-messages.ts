@@ -35,6 +35,16 @@ export interface NegentropyRoundOutcome {
 
 export type NegentropyContinuation = { ts: number; id: string } | null;
 
+export const NEG_CLOSE_OUTCOMES = [
+    'complete',
+    'busy',
+    'round_limit',
+    'incomplete',
+    'failed',
+] as const;
+
+export type NegCloseOutcome = typeof NEG_CLOSE_OUTCOMES[number];
+
 export interface NegOpenMessage extends HyperMessageBase {
     type: 'neg_open';
     sessionId: string;
@@ -59,7 +69,8 @@ export interface NegCloseMessage extends HyperMessageBase {
     sessionId: string;
     windowSeq: number;
     round: number;
-    reason?: string;
+    outcome: NegCloseOutcome;
+    detail?: string;
     continuation?: NegentropyContinuation;
 }
 

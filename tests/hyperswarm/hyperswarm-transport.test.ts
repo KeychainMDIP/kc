@@ -183,7 +183,7 @@ describe('hyperswarm transport routing', () => {
         const messages = [
             ping(),
             { type: 'queue', operations: [] },
-            { type: 'neg_close', sessionId: 's', windowSeq: 0, round: 0 },
+            { type: 'neg_close', sessionId: 's', windowSeq: 0, round: 0, outcome: 'complete' },
         ].map(message => encodeFramedMessage(JSON.stringify(message)));
 
         await transport.processInboundPeerData(peerKey, Buffer.concat(messages));
