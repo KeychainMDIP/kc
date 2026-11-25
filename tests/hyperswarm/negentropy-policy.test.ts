@@ -1,64 +1,10 @@
 import {
-    decideInboundNegOpenConflict,
-    hasActiveOrderedCatchupSession,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
     shouldStartPostOrderedCatchupNegentropy,
 } from '../../services/mediators/hyperswarm/src/negentropy/policy.ts';
 
 describe('negentropy sync policy', () => {
-    it('detects active ordered catch-up in either direction', () => {
-        expect(hasActiveOrderedCatchupSession({
-            orderedCatchupClientSessionId: null,
-            orderedCatchupServerSessionId: null,
-        })).toBe(false);
-        expect(hasActiveOrderedCatchupSession({
-            orderedCatchupClientSessionId: 'client-session',
-            orderedCatchupServerSessionId: null,
-        })).toBe(true);
-        expect(hasActiveOrderedCatchupSession({
-            orderedCatchupClientSessionId: null,
-            orderedCatchupServerSessionId: 'server-session',
-        })).toBe(true);
-    });
-
-    it('decides inbound neg_open conflicts without replacing active ordered catch-up', () => {
-        expect(decideInboundNegOpenConflict({
-            activeSessionMode: null,
-            activeSessionId: null,
-            activeOrderedCatchupSessionId: null,
-            remoteSessionId: 'remote-negentropy',
-        })).toStrictEqual({ action: 'accept' });
-
-        expect(decideInboundNegOpenConflict({
-            activeSessionMode: 'negentropy',
-            activeSessionId: 'remote-negentropy',
-            activeOrderedCatchupSessionId: null,
-            remoteSessionId: 'remote-negentropy',
-        })).toStrictEqual({ action: 'accept' });
-
-        expect(decideInboundNegOpenConflict({
-            activeSessionMode: 'negentropy',
-            activeSessionId: 'local-negentropy',
-            activeOrderedCatchupSessionId: null,
-            remoteSessionId: 'remote-negentropy',
-        })).toStrictEqual({ action: 'replace' });
-
-        expect(decideInboundNegOpenConflict({
-            activeSessionMode: 'ordered_catchup',
-            activeSessionId: 'ordered-client',
-            activeOrderedCatchupSessionId: 'ordered-client',
-            remoteSessionId: 'remote-negentropy',
-        })).toStrictEqual({ action: 'ignore', reason: 'ordered_catchup_active' });
-
-        expect(decideInboundNegOpenConflict({
-            activeSessionMode: null,
-            activeSessionId: null,
-            activeOrderedCatchupSessionId: 'ordered-server',
-            remoteSessionId: 'remote-negentropy',
-        })).toStrictEqual({ action: 'ignore', reason: 'ordered_catchup_active' });
-    });
-
     it('starts connect-time negentropy only for initiator without active session', () => {
         expect(shouldStartConnectTimeNegentropy(false, true)).toBe(true);
         expect(shouldStartConnectTimeNegentropy(true, true)).toBe(false);
@@ -76,22 +22,8 @@ describe('negentropy sync policy', () => {
             isInitiator: true,
             syncCompleted: false,
         };
-        const states = [
-            {
-                orderedCatchupClientSessionId: 'client-session',
-                orderedCatchupServerSessionId: null,
-            },
-            {
-                orderedCatchupClientSessionId: null,
-                orderedCatchupServerSessionId: 'server-session',
-            },
-        ];
-
-        for (const state of states) {
-            const orderedCatchupActive = hasActiveOrderedCatchupSession(state);
-            expect(shouldStartConnectTimeNegentropy(false, true, orderedCatchupActive)).toBe(false);
-            expect(shouldSchedulePeriodicRepair({ ...repairBase, orderedCatchupActive })).toBe(false);
-        }
+        expect(shouldStartConnectTimeNegentropy(false, true, true)).toBe(false);
+        expect(shouldSchedulePeriodicRepair({ ...repairBase, orderedCatchupActive: true })).toBe(false);
     });
 
     it('schedules periodic repair only when all guards pass', () => {

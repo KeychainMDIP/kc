@@ -22,7 +22,6 @@ import {
     normalizeNegentropyIds,
     parseRemoteWindow,
 } from './negentropy/protocol.js';
-import { decideInboundNegOpenConflict } from './negentropy/policy.js';
 import { addAggregateSample } from './negentropy/observability.js';
 import {
     collectNewIds,
@@ -1896,16 +1895,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             conn.negentropyBusyRetryAfter = 0;
         }
         const activeOrderedCatchupSessionId = schedulingState?.activeSessionId ?? null;
-        const conflictDecision = decideInboundNegOpenConflict({
-            activeSessionMode: session ? 'negentropy' : null,
-            activeSessionId: session?.sessionId ?? null,
-            activeOrderedCatchupSessionId,
-            remoteSessionId,
-        });
         const globalOrderedCatchupActive = schedulingState?.globalActive ?? false;
         const peerOrderedCatchupActive = schedulingState?.peerActive ?? false;
 
-        if (conflictDecision.action === 'ignore' || globalOrderedCatchupActive || peerOrderedCatchupActive
+        if (globalOrderedCatchupActive || peerOrderedCatchupActive
             || !options.importPipeline.available) {
             const remoteWindowSeq = msg.windowSeq;
             const rejectionSent = remoteSessionId.length > 0
@@ -1981,11 +1974,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, 'initial neg_open must use windowSeq 0 without continuation or cursor');
             return;
         }
-        if (conflictDecision.action === 'replace' && session) {
-            closePeerSession(peerKey, 'replaced_by_remote_open');
-            session = undefined;
-        }
-
         if (!session || session.sessionId !== msg.sessionId) {
             const generation = claimSessionSlot(peerKey, msg.sessionId);
             if (generation === null) {
