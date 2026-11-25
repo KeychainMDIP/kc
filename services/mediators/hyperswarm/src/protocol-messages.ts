@@ -40,7 +40,6 @@ export const NEG_CLOSE_OUTCOMES = [
     'busy',
     'round_limit',
     'incomplete',
-    'failed',
 ] as const;
 
 export type NegCloseOutcome = typeof NEG_CLOSE_OUTCOMES[number];
@@ -70,7 +69,6 @@ export interface NegCloseMessage extends HyperMessageBase {
     windowSeq: number;
     round: number;
     outcome: NegCloseOutcome;
-    detail?: string;
     continuation?: NegentropyContinuation;
 }
 

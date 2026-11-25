@@ -54,16 +54,16 @@ interface ReconciliationWindow {
 
 Every session starts at `windowSeq: 0`. A later window increments the sequence
 by one and must exactly match a continuation or smaller round-cap split derived
-from the preceding window. `neg_msg` and active-session `neg_close` messages
+from the preceding window. `neg_msg`, complete closes and round-limit closes
 carry `continuation: null` for an uncapped snapshot or its cursor when capped.
-The next `neg_open` repeats that value as `previousContinuation`; an immediate
-busy rejection may omit it because no snapshot was admitted.
+The next `neg_open` repeats that value as `previousContinuation`. Busy and
+incomplete closes may omit it because a usable snapshot might not exist.
 
-Every `neg_close` has one stable outcome: `complete`, `busy`, `round_limit`,
-`incomplete`, or `failed`. An optional `detail` is bounded diagnostic text and
-must not affect retry, repair, or synchronization state. Only `complete` marks
-the peer synchronized; `busy` retries without repair, `round_limit` may advance
-an exact split window, and `incomplete` or `failed` use normal repair.
+Every `neg_close` has one stable control outcome: `complete`, `busy`,
+`round_limit`, or `incomplete`. Only `complete` marks the peer synchronized;
+`busy` retries without repair, `round_limit` may advance an exact split window,
+and `incomplete` uses normal repair. Exact local failure reasons remain in the
+sender's structured logs rather than crossing the wire.
 
 ## Ordered catch-up
 
@@ -121,5 +121,5 @@ The transfer is retired after its final acknowledgement, or when the session
 closes, is replaced, times out, disconnects, resets, or shuts down. Stale,
 future, repeated, unsolicited, wrong-page, and wrong-session traffic is rejected
 before import. If an authorized operation disappears or fails content-ID
-verification before sending, the session closes as failed instead of sending a
+verification before sending, the session closes as incomplete instead of sending a
 partial terminal page.

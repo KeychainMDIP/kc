@@ -97,17 +97,17 @@ const PEER_CLOSE_OUTCOME_BY_REASON = {
     ops_push_import_capacity: 'incomplete',
     missing_requested_operations: 'incomplete',
     ops_push_import_retryable: 'incomplete',
-    failed: 'failed',
-    snapshot_build_failed: 'failed',
-    ops_offer_lookup_failed: 'failed',
-    ops_push_lookup_failed: 'failed',
-    idle_timeout: 'failed',
+    invalid_requested_operations: 'incomplete',
+    snapshot_build_failed: 'incomplete',
+    ops_offer_lookup_failed: 'incomplete',
+    ops_push_lookup_failed: 'incomplete',
+    idle_timeout: 'incomplete',
 } as const satisfies Record<string, NegCloseOutcome>;
 
 type PeerCloseReason = keyof typeof PEER_CLOSE_OUTCOME_BY_REASON;
 
 function peerCloseOutcome(reason: string): NegCloseOutcome {
-    return PEER_CLOSE_OUTCOME_BY_REASON[reason as PeerCloseReason] ?? 'failed';
+    return PEER_CLOSE_OUTCOME_BY_REASON[reason as PeerCloseReason] ?? 'incomplete';
 }
 
 type NegentropyMessage =
@@ -439,7 +439,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             windowSeq: msg.windowSeq,
             round: msg.round,
             outcome: 'busy',
-            detail: 'sync_busy',
         })) {
             if (marker === 'slot') {
                 conn.negentropyBusyGeneration = markerValue;
@@ -1307,8 +1306,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             }
             try {
                 const failTransfer = () => {
-                    sendNegClose(peerKey, session, 'failed');
-                    closePeerSession(peerKey, 'failed');
+                    sendNegClose(peerKey, session, 'invalid_requested_operations');
+                    closePeerSession(peerKey, 'invalid_requested_operations');
                 };
                 const requestedIds = new Set(request.remainingIds);
                 const availableIds = new Set<string>();
@@ -1431,7 +1430,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             windowSeq,
             round: session.rounds,
             outcome,
-            ...(reason === outcome ? {} : { detail: reason }),
             ...(continuation === undefined ? {} : { continuation }),
         };
 
@@ -1944,9 +1942,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     windowSeq: remoteWindowSeq,
                     round: Number.isInteger(msg.round) ? msg.round : 0,
                     outcome: 'busy',
-                    detail: options.importPipeline.available
-                        ? 'ordered_catchup_active'
-                        : 'gatekeeper_processing_unavailable',
                 });
             log.debug(
                 {
@@ -2504,7 +2499,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             || !isCurrentSessionWindow(peerKey, session, msg.windowSeq, 'neg_close')) {
             return;
         }
-        const mayOmitContinuation = msg.outcome === 'busy' || msg.outcome === 'failed';
+        const mayOmitContinuation = msg.outcome === 'busy' || msg.outcome === 'incomplete';
         if (!Object.prototype.hasOwnProperty.call(msg, 'continuation') && !mayOmitContinuation) {
             reportProtocolViolation(peerKey, 'active neg_close is missing continuation');
             return;
@@ -2578,7 +2573,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             }
         }
         log.debug(
-            { peer: shortName(peerKey), outcome: msg.outcome, detail: msg.detail },
+            { peer: shortName(peerKey), outcome: msg.outcome },
             'remote negentropy session closed',
         );
         closePeerSession(peerKey, msg.outcome);

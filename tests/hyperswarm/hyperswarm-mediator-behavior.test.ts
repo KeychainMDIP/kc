@@ -49,7 +49,6 @@ interface WireBody {
     windowSeq?: number;
     round?: number;
     outcome?: string;
-    detail?: string;
     window?: WireWindow;
     continuation?: Cursor | null;
     previousContinuation?: Cursor | null;
@@ -770,9 +769,6 @@ describe('hyperswarm mediator behavior', () => {
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
             body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();
@@ -853,9 +849,6 @@ describe('hyperswarm mediator behavior', () => {
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
             body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();
@@ -915,9 +908,6 @@ describe('hyperswarm mediator behavior', () => {
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
             body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.outcome === 'incomplete' && message.body.detail === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();

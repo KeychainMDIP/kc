@@ -87,9 +87,9 @@ has at most one operation request outstanding, and the sender waits for the
 current page to be imported and acknowledged before sending another. The
 session initiator assigns one increasing `transferId` across offers and direct
 requests; push and acknowledgement pages reuse that ID and a zero-based `page`.
-Session closes expose only the stable outcomes `complete`, `busy`,
-`round_limit`, `incomplete`, and `failed`; optional detail is diagnostic and
-never controls synchronization or repair.
+Session closes expose only the stable control outcomes `complete`, `busy`,
+`round_limit`, and `incomplete`. Exact local failure reasons remain in the
+sender's structured logs rather than crossing the wire.
 
 Live gossip admits one active and one waiting batch globally. Completed and
 retry-delayed batch hashes share a 4,096-entry FIFO cache. Pending input and local

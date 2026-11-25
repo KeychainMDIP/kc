@@ -50,7 +50,7 @@ const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     ordered_catchup_done: new Set(['type', 'sessionId']),
     neg_open: new Set(['type', 'sessionId', 'windowSeq', 'window', 'round', 'frame', 'previousContinuation']),
     neg_msg: new Set(['type', 'sessionId', 'windowSeq', 'round', 'frame', 'continuation']),
-    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'outcome', 'detail', 'continuation']),
+    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'outcome', 'continuation']),
     ops_offer: new Set(['type', 'sessionId', 'transferId', 'ids']),
     ops_req: new Set(['type', 'sessionId', 'transferId', 'ids', 'incomplete']),
     ops_push: new Set(['type', 'sessionId', 'transferId', 'page', 'hasMore', 'operations']),
@@ -281,7 +281,7 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
     if (typeof message.outcome !== 'string' || !NEG_CLOSE_OUTCOME_SET.has(message.outcome)) {
         return `outcome must be one of ${NEG_CLOSE_OUTCOMES.join(', ')}`;
     }
-    return message.detail === undefined ? null : validateBoundedString(message.detail, 'detail');
+    return null;
 }
 
 export function validateHyperMessageEnvelope(

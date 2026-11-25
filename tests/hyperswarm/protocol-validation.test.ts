@@ -11,10 +11,7 @@ import {
     NEG_CLOSE_OUTCOMES,
     type QueueMessage,
 } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
-import {
-    MAX_NEGENTROPY_FRAME_BYTES,
-    MAX_PROTOCOL_STRING_BYTES,
-} from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
+import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
 import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 
 const limits = {
@@ -198,7 +195,7 @@ describe('hyperswarm protocol validation', () => {
         }
     });
 
-    it('requires a stable close outcome and bounds diagnostic detail', () => {
+    it('requires a stable close outcome and rejects removed close fields', () => {
         for (const outcome of NEG_CLOSE_OUTCOMES) {
             expect(validateHyperMessageEnvelope({
                 ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0, outcome,
@@ -216,8 +213,15 @@ describe('hyperswarm protocol validation', () => {
         })).toMatchObject({ ok: false, reason: 'neg_close contains unknown property reason' });
         expect(validateHyperMessageEnvelope({
             ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0,
-            outcome: 'failed', detail: 'x'.repeat(MAX_PROTOCOL_STRING_BYTES + 1),
-        })).toMatchObject({ ok: false });
+            outcome: 'incomplete', detail: 'local-only reason',
+        })).toMatchObject({
+            ok: false,
+            reason: 'neg_close contains unknown property detail',
+        });
+        expect(validateHyperMessageEnvelope({
+            ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0,
+            outcome: 'failed',
+        })).toMatchObject({ ok: false, reason: expect.stringContaining('outcome must be one of') });
     });
 
     it('validates operation, ID, cursor, window, and frame payload bounds', () => {

@@ -176,6 +176,34 @@ describe('Negentropy coordinator', () => {
             }
             expect(coordinator.getActiveSessionCount()).toBe(0);
 
+            for (const outcome of ['complete', 'round_limit'] as const) {
+                const open = await startLocal();
+                onProtocolViolation.mockClear();
+                await coordinator.handleMessage(peerKey, {
+                    type: 'neg_close', sessionId: open.sessionId,
+                    windowSeq: open.windowSeq, round: 0, outcome,
+                });
+                expect(onProtocolViolation).toHaveBeenCalledWith(
+                    peerKey,
+                    'active neg_close is missing continuation',
+                    connection,
+                );
+                expect(coordinator.hasActiveSession(peerKey)).toBe(true);
+                coordinator.reset();
+            }
+
+            for (const outcome of ['busy', 'incomplete'] as const) {
+                const open = await startLocal();
+                onProtocolViolation.mockClear();
+                await coordinator.handleMessage(peerKey, {
+                    type: 'neg_close', sessionId: open.sessionId,
+                    windowSeq: open.windowSeq, round: 0, outcome,
+                });
+                expect(onProtocolViolation).not.toHaveBeenCalled();
+                expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, outcome);
+                expect(coordinator.hasActiveSession(peerKey)).toBe(false);
+            }
+
             const guardOpen = await startLocal();
             coordinator.reset();
             coordinator.setAdapter(null);
@@ -249,7 +277,7 @@ describe('Negentropy coordinator', () => {
                 });
             }
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             outcomes.splice(0);
             failedType = null;
 
@@ -260,7 +288,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = 'neg_close';
             open = await startLocal();
@@ -269,7 +297,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             const filterRetryDelayedIds = importPipeline.filterRetryDelayedIds.bind(importPipeline);
             importPipeline.filterRetryDelayedIds = ids => ({
@@ -282,7 +310,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             importPipeline.filterRetryDelayedIds = filterRetryDelayedIds;
             failedType = null;
 
@@ -294,7 +322,7 @@ describe('Negentropy coordinator', () => {
             coordinator.reset();
             failedType = 'neg_msg';
             await openRemote(open, 'remote-frame-failure');
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             open = await startLocal();
@@ -329,14 +357,14 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-offer-send-failure', transferId: 0, ids: ['e'.repeat(64)],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             failedType = null;
 
             failedType = 'neg_open';
             expect(await coordinator.startSession(peerKey, {
                 source: 'connect', initiator: true,
             })).toBe(false);
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             open = await startLocal();
@@ -346,7 +374,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             open = await startLocal();
@@ -356,7 +384,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             open = await startLocal();
@@ -400,7 +428,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-send', transferId: 0, ids: [operation.signature.hash],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failBulk = false;
             failedType = null;
@@ -411,7 +439,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_offer', sessionId: 'remote-offer-lookup', transferId: 0, ids: [operation.signature.hash],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             mockLogger.warn.mockClear();
 
             open = await startLocal();
@@ -426,7 +454,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-corrupt-record', transferId: 0, ids: [operation.signature.hash],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             mockLogger.warn.mockClear();
 
             open = await startLocal();
@@ -440,7 +468,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_req', sessionId: 'remote-mismatched-record', transferId: 0, ids: [operation.signature.hash],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             mockLogger.warn.mockClear();
 
             open = await startLocal();
@@ -454,7 +482,7 @@ describe('Negentropy coordinator', () => {
                 ids: [operation.signature.hash],
             });
             expect(sent.slice(missingPushStart)).not.toContainEqual(expect.objectContaining({ type: 'ops_push' }));
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             open = await startLocal();
             coordinator.reset();
@@ -546,7 +574,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_ack', sessionId: 'remote-page-lookup', transferId: 0, page: 0,
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             mockLogger.warn.mockClear();
 
             open = await startLocal();
@@ -565,7 +593,7 @@ describe('Negentropy coordinator', () => {
             await coordinator.handleMessage(peerKey, {
                 type: 'ops_ack', sessionId: 'remote-page-missing', transferId: 0, page: 0,
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             open = await startLocal();
             outcomes.push({
@@ -656,7 +684,7 @@ describe('Negentropy coordinator', () => {
             expect(importPipeline.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
                 kind: 'terminal', data: [terminalOperation],
             }));
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             failedType = null;
 
             requested = await requestOperation('refresh-failure', terminalOperation);
@@ -736,7 +764,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_close', sessionId: 'remote-incomplete-close', windowSeq: open.windowSeq,
                 round: remote.round!, outcome: 'complete', continuation: null,
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             importPipeline.filterRetryDelayedIds = originalFilterRetryDelayedIds;
             failedType = null;
 
@@ -791,7 +819,7 @@ describe('Negentropy coordinator', () => {
                 transferId: requested.request.type === 'ops_req' ? requested.request.transferId : 0,
                 page: 0, hasMore: false, operations: [],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             requested = await requestOperation('ack-push');
@@ -801,7 +829,7 @@ describe('Negentropy coordinator', () => {
                 transferId: requested.request.type === 'ops_req' ? requested.request.transferId : 0,
                 page: 0, hasMore: false, operations: [operation],
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             expect(coordinator.getActiveSessionCount()).toBe(0);
 
             failedType = null;
@@ -815,7 +843,7 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_msg', continuation: null, sessionId: open.sessionId, windowSeq: open.windowSeq, round: 1,
                 frame: 'AA==',
             });
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             const normalFilterRetryDelayedIds = importPipeline.filterRetryDelayedIds.bind(importPipeline);
             importPipeline.filterRetryDelayedIds = ids => ({
@@ -838,7 +866,7 @@ describe('Negentropy coordinator', () => {
                 peerKey,
                 expect.objectContaining({ type: 'neg_close', outcome: 'incomplete' }),
             );
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             failedType = null;
             open = await startLocal();
@@ -862,7 +890,7 @@ describe('Negentropy coordinator', () => {
                 peerKey,
                 expect.objectContaining({ type: 'neg_close', outcome: 'incomplete' }),
             );
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             failedType = null;
             importPipeline.filterRetryDelayedIds = normalFilterRetryDelayedIds;
 
@@ -912,10 +940,10 @@ describe('Negentropy coordinator', () => {
             expect(sendToPeer).toHaveBeenLastCalledWith(
                 peerKey,
                 expect.objectContaining({
-                    type: 'neg_close', outcome: 'incomplete', detail: 'unresolved_limit_exceeded',
+                    type: 'neg_close', outcome: 'incomplete',
                 }),
             );
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             expect(coordinator.getActiveSessionCount()).toBe(0);
             failedType = null;
 
@@ -1510,6 +1538,7 @@ describe('Negentropy coordinator', () => {
         expect(cancelBulkReads).toHaveBeenCalledWith(peerKey);
 
         expect(onSessionClosed).toHaveBeenCalledTimes(1);
+        expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'incomplete');
         expect(mockLogger.error).toHaveBeenCalledWith(
             { error: callbackError, peer: '2222-2222', reason: 'test_close' },
             'negentropy session-close callback failed',
@@ -1518,6 +1547,7 @@ describe('Negentropy coordinator', () => {
             peer: '2222-2222',
             sessionId: 'test-session',
             durationMs: expect.any(Number),
+            outcome: 'incomplete',
             reason: 'test_close',
         }), 'peer sync session closed');
         await store.stop();
@@ -1607,7 +1637,7 @@ describe('Negentropy coordinator', () => {
 
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
             expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({
-                type: 'neg_close', sessionId: 'test-session', outcome: 'busy', detail: 'snapshot_busy',
+                type: 'neg_close', sessionId: 'test-session', outcome: 'busy',
             }));
             expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'busy');
             expect(terminatePeerConnection).not.toHaveBeenCalled();
@@ -1622,7 +1652,7 @@ describe('Negentropy coordinator', () => {
                 round: 0,
             });
             expect(sendToPeer).toHaveBeenLastCalledWith(peerKey, expect.objectContaining({
-                type: 'neg_close', sessionId: 'remote-contention', outcome: 'busy', detail: 'snapshot_busy',
+                type: 'neg_close', sessionId: 'remote-contention', outcome: 'busy',
             }));
             expect(onSessionClosed).toHaveBeenCalledWith(peerKey, 'busy');
             expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -1877,10 +1907,9 @@ describe('Negentropy coordinator', () => {
                 type: 'neg_close',
                 sessionId: 'remote-session',
                 windowSeq: remoteWindow.order,
-                outcome: 'failed',
-                detail: 'snapshot_build_failed',
+                outcome: 'incomplete',
             }));
-            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'failed');
+            expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
 
             finishShutdownMutation = coordinator.beginStoreMutation();
             const waitingForMutation = coordinator.startSession(peerKey, {
