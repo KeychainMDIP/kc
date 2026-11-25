@@ -408,7 +408,8 @@ export function validateHyperMessagePayload(
         reason = validateFrame(message.frame)
             ?? validateContinuation(message.continuation, 'continuation', false);
     } else if (message.type === 'neg_close') {
-        reason = validateContinuation(message.continuation, 'continuation', true);
+        const continuationOptional = message.outcome === 'busy' || message.outcome === 'incomplete';
+        reason = validateContinuation(message.continuation, 'continuation', continuationOptional);
     }
     return reason ? { ok: false, reason } : { ok: true, value: {} };
 }

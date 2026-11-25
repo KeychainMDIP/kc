@@ -1539,7 +1539,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         const importsBefore = protocolNode.node.gatekeeperClient.importBatch.mock.calls.length;
         for (const message of [
             { type: 'neg_msg', continuation: null, sessionId: 'stale', windowSeq: open.windowSeq, frame: open.frame },
-            { type: 'neg_close', sessionId: 'stale', windowSeq: open.windowSeq, outcome: 'complete' },
+            {
+                type: 'neg_close', continuation: null,
+                sessionId: 'stale', windowSeq: open.windowSeq, outcome: 'complete',
+            },
         ]) {
             await protocolNode.node.run(
                 () => protocolNode.node.mediator.__test.receiveMsg(peerKey, message),

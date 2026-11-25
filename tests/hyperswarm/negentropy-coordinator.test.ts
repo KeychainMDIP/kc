@@ -183,7 +183,7 @@ describe('Negentropy coordinator', () => {
                 });
                 expect(onProtocolViolation).toHaveBeenCalledWith(
                     peerKey,
-                    'active neg_close is missing continuation',
+                    'invalid_neg_close: continuation is required',
                     connection,
                 );
                 expect(coordinator.hasActiveSession(peerKey)).toBe(true);

@@ -17,7 +17,11 @@ All network nodes must upgrade together because older message shapes are
 intentionally incompatible.
 
 The external message shapes and ordered catch-up terminal rules are documented
-in [the Hyperswarm synchronization protocol](../../../doc/01-protocol/hyperswarm.md).
+in [the Hyperswarm v2 wire protocol](../../../doc/01-protocol/hyperswarm.md),
+with a tracked [JSON Schema](../../../doc/01-protocol/hyperswarm-v2.schema.json)
+and [conformance fixture](../../../tests/hyperswarm/fixtures/hyperswarm-v2-conformance.json).
+The minimum interoperable peer implements ping plus the seven Negentropy and
+authorized-transfer messages. Queue gossip and ordered catch-up are optional.
 
 Realtime propagation uses best-effort Gatekeeper queue gossip:
 
@@ -42,20 +46,21 @@ recovers best-effort delivery failures.
 
 ## Native Negentropy engine
 
-The mediator vendors the official JavaScript Negentropy v1 engine as
+The mediator vendors the official JavaScript Negentropy engine as
 `src/negentropy/Negentropy.cjs`; the `.cjs` extension only selects Node's module
-format. Its reproducible source is:
+format. Its reproducible source provenance is:
 
 - repository: `https://github.com/hoytech/negentropy`
 - commit: `fc53c6c12db03c0d27abfd1e956ba75c37152821`
 - source path: `js/Negentropy.js`
 - SHA-256: `0ccda2fb5343f97a0679442aec55e258cab09ddc775a3f8af87ada7b3c02cb50`
-- native protocol byte: `0x61` (Negentropy protocol v1)
-- specification: [Negentropy Protocol V1](https://github.com/hoytech/negentropy/blob/fc53c6c12db03c0d27abfd1e956ba75c37152821/docs/negentropy-protocol-v1.md)
+- license: MIT
+- embedded frame byte: `0x61`
 
-The native protocol version is separate from MDIP's Negentropy v2 session and
-operation-transfer protocol. Deterministic native frames and fingerprints are
-kept in `tests/hyperswarm/fixtures/negentropy-v1-conformance.json`.
+These details identify the engine embedded by the MDIP v2 contract; they do not
+define another supported public wire version. Deterministic native frames and
+fingerprints are kept in
+`tests/hyperswarm/fixtures/negentropy-native-conformance.json`.
 Native frames are emitted as bytes and carried in JSON as canonical padded
 base64. Their decoded protocol maximum is fixed at 128 KiB.
 

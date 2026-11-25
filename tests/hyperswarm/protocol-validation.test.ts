@@ -414,6 +414,10 @@ describe('hyperswarm protocol validation', () => {
         expect(validateHyperMessagePayload({
             ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0,
             outcome: 'complete',
+        } as never, limits)).toMatchObject({ ok: false, reason: 'continuation is required' });
+        expect(validateHyperMessagePayload({
+            ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0,
+            outcome: 'complete', continuation: null,
         } as never, limits).ok).toBe(true);
         expect(validateHyperMessagePayload({
             ...base('neg_close'), sessionId: 's', windowSeq: 0, round: 0,

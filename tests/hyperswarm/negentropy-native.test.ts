@@ -53,7 +53,7 @@ const require = createRequire(import.meta.url);
 const nativePath = path.resolve('services/mediators/hyperswarm/src/negentropy/Negentropy.cjs');
 const native = require(nativePath) as NativeModule;
 const fixture = JSON.parse(readFileSync(
-    path.resolve('tests/hyperswarm/fixtures/negentropy-v1-conformance.json'),
+    path.resolve('tests/hyperswarm/fixtures/negentropy-native-conformance.json'),
     'utf8',
 )) as ConformanceFixture;
 
@@ -160,7 +160,7 @@ function upstreamFrameLimitCase(): FrameLimitCase {
     };
 }
 
-describe('vendored Negentropy v1', () => {
+describe('vendored native Negentropy engine', () => {
     it('matches the pinned official source', () => {
         const digest = createHash('sha256').update(readFileSync(nativePath)).digest('hex');
         expect(digest).toBe(fixture.source.sha256);
