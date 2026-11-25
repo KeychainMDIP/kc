@@ -733,6 +733,37 @@ describe('ordered catch-up request authorization', () => {
         await coordinator.shutdown();
     });
 
+    it('measures each admitted operation page once before import', async () => {
+        const enqueue = jest.fn(async () => importResult);
+        const coordinator = createCoordinator({
+            importPipeline: {
+                available: true,
+                enqueue,
+                waitForIdle: jest.fn(async () => undefined),
+                refreshIndex: jest.fn(async () => bootstrapResult),
+            } as unknown as ImportPipeline,
+        });
+        const operation = makeOperation();
+        const measuredOperation = { ...operation };
+        const toJSON = jest.fn(() => operation);
+        Object.defineProperty(measuredOperation, 'toJSON', { value: toJSON });
+
+        expect(coordinator.createClientSession(peerKey, 'measured-page')).toBe(true);
+        await coordinator.handleMessage(peerKey, {
+            type: 'ordered_catchup_push',
+            sessionId: 'measured-page',
+            cursor: { syncOrder: 1, id: operation.signature.hash },
+            hasMore: false,
+            operations: [measuredOperation],
+        });
+
+        expect(toJSON).toHaveBeenCalledTimes(1);
+        expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({
+            data: [measuredOperation],
+        }), expect.any(Function));
+        await coordinator.shutdown();
+    });
+
     it('rejects a duplicate page while the next request is outstanding', async () => {
         const onProtocolViolation = jest.fn();
         const importPipeline = {

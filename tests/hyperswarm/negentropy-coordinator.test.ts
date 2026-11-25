@@ -660,6 +660,20 @@ describe('Negentropy coordinator', () => {
             expect(onSessionClosed).toHaveBeenLastCalledWith(peerKey, 'incomplete');
             onProtocolViolation.mockClear();
 
+            requested = await requestOperation('measured-push');
+            const measuredOperation = { ...operation };
+            const toJSON = jest.fn(() => operation);
+            Object.defineProperty(measuredOperation, 'toJSON', { value: toJSON });
+            await coordinator.handleMessage(peerKey, {
+                type: 'ops_push', sessionId: requested.request.sessionId!,
+                transferId: requested.request.type === 'ops_req' ? requested.request.transferId : 0,
+                page: 0, hasMore: false, operations: [measuredOperation],
+            });
+            expect(toJSON).toHaveBeenCalledTimes(1);
+            coordinator.reset();
+            connection.lastNegentropyAttemptAt = 0;
+            connection.negentropySynced = false;
+
             const terminalUnsigned = { ...unsigned, created: '2026-01-03T00:00:00.000Z' };
             const terminalOperation = { ...terminalUnsigned, signature: {
                 hash: cipher.hashJSON(terminalUnsigned),

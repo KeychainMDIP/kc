@@ -8,7 +8,7 @@ import type { ConnectionInfo } from './mediator-state.js';
 import { addAggregateSample } from './negentropy/observability.js';
 import {
     chunkOperationsForPush,
-    validateOperationPage,
+    type ValidatedOperationPage,
 } from './negentropy/transfer.js';
 import { normalizeInboundOpsPushBatch } from './operation-order.js';
 import {
@@ -134,7 +134,7 @@ export function createOrderedCatchupCoordinator(
         peerKey: string,
         message: OrderedCatchupMessage,
         connection: ConnectionInfo,
-    ): boolean {
+    ): ReturnType<typeof validateHyperMessagePayload> {
         const result = validateHyperMessagePayload(message, {
             maxIdsPerRequest: 1,
             maxOpsPerPush: options.maxOpsPerPage,
@@ -151,9 +151,8 @@ export function createOrderedCatchupCoordinator(
                 connection,
                 `invalid_${message.type}: ${result.reason}`,
             );
-            return false;
         }
-        return true;
+        return result;
     }
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
@@ -601,7 +600,11 @@ export function createOrderedCatchupCoordinator(
         }
     }
 
-    async function handlePush(peerKey: string, message: OrderedCatchupPushMessage): Promise<void> {
+    async function handlePush(
+        peerKey: string,
+        message: OrderedCatchupPushMessage,
+        page: ValidatedOperationPage,
+    ): Promise<void> {
         const session = clients.get(peerKey);
         if (!session || session.sessionId !== message.sessionId) {
             log.warn({ peer: shortName(peerKey), sessionId: message.sessionId }, 'ignoring ordered catch-up push for unknown session');
@@ -624,15 +627,7 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, 'non_advancing_ordered_catchup_cursor');
             return;
         }
-        const page = validateOperationPage(message.operations, {
-            maxOpsPerPush: options.maxOpsPerPage,
-            maxBytesPerPush: options.maxBytesPerPage,
-        });
-        if (!page.ok) {
-            rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${page.reason}`);
-            return;
-        }
-        const finalOperation = mapOperationToSyncKey(message.operations[message.operations.length - 1]);
+        const finalOperation = mapOperationToSyncKey(page.operations[page.operations.length - 1]);
         if (!finalOperation.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${finalOperation.reason}`);
             return;
@@ -641,17 +636,17 @@ export function createOrderedCatchupCoordinator(
             rejectProtocolMessage(peerKey, session, connection, 'mismatched_ordered_catchup_cursor');
             return;
         }
-        const content = validateOperationContentIds(message.operations, options.cipher);
+        const content = validateOperationContentIds(page.operations, options.cipher);
         if (!content.ok) {
             rejectProtocolMessage(peerKey, session, connection, `invalid_ordered_catchup_push: ${content.reason}`);
             return;
         }
-        const batch = normalizeInboundOpsPushBatch(message.operations);
-        if (batch.length !== message.operations.length) {
+        const batch = normalizeInboundOpsPushBatch(page.operations);
+        if (batch.length !== page.operations.length) {
             rejectProtocolMessage(peerKey, session, connection, 'ordered_catchup_push_contains_duplicate_operations');
             return;
         }
-        const reservation = options.operationPages.reserve(page.value.bytes);
+        const reservation = options.operationPages.reserve(page.bytes);
         if (!reservation) {
             session.importsAborted = true;
             failClient(peerKey, 'ordered_catchup_import_capacity');
@@ -719,14 +714,18 @@ export function createOrderedCatchupCoordinator(
         const connection = options.getConnection(peerKey);
         // Apply page limits before session lookup so stale or invented session IDs cannot
         // bypass bounded ingress with an oversized push.
-        if (!connection || !validateCurrentPayload(peerKey, message, connection)) {
+        if (!connection) {
+            return;
+        }
+        const payload = validateCurrentPayload(peerKey, message, connection);
+        if (!payload.ok) {
             return;
         }
         if (message.type === 'ordered_catchup_req') {
             await handleRequest(peerKey, message);
         }
         else if (message.type === 'ordered_catchup_push') {
-            await handlePush(peerKey, message);
+            await handlePush(peerKey, message, payload.value.operationPage!);
         }
         else {
             await handleDone(peerKey, message);

@@ -42,6 +42,10 @@ const NEG_CLOSE_OUTCOME_SET = new Set<string>(NEG_CLOSE_OUTCOMES);
 
 type ProtocolValidationResult<T> = TransferValidationResult<T>;
 
+export interface ValidatedHyperMessagePayload {
+    operationPage?: ValidatedOperationPage;
+}
+
 const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     ping: new Set(['type', 'version', 'name', 'peerDids', 'latestTs', 'ordered']),
     queue: new Set(['type', 'operations']),
@@ -331,11 +335,11 @@ export function validateQueueMessagePayload(
 export function validateHyperMessagePayload(
     message: HyperMessage,
     limits: ProtocolPayloadLimits,
-): ProtocolValidationResult<HyperMessage> {
+): ProtocolValidationResult<ValidatedHyperMessagePayload> {
     let reason: string | null = null;
     if (message.type === 'queue') {
         const result = validateQueueMessagePayload(message, limits);
-        return result.ok ? { ok: true, value: message } : result;
+        return result.ok ? { ok: true, value: { operationPage: result.value } } : result;
     }
     if (message.type === 'ops_push') {
         if (typeof message.hasMore !== 'boolean') {
@@ -347,11 +351,11 @@ export function validateHyperMessagePayload(
         }
         return message.hasMore && result.value.operations.length === 0
             ? { ok: false, reason: 'a non-final ops_push page must not be empty' }
-            : { ok: true, value: message };
+            : { ok: true, value: { operationPage: result.value } };
     }
     if (message.type === 'ops_ack') {
         return message.incomplete === undefined || message.incomplete === true
-            ? { ok: true, value: message }
+            ? { ok: true, value: {} }
             : { ok: false, reason: 'incomplete must be true when present' };
     }
     if (message.type === 'ordered_catchup_push') {
@@ -368,7 +372,7 @@ export function validateHyperMessagePayload(
         }
         return result.value.operations.length === 0
             ? { ok: false, reason: 'ordered_catchup_push operations must not be empty' }
-            : { ok: true, value: message };
+            : { ok: true, value: { operationPage: result.value } };
     }
     if (message.type === 'ops_offer') {
         const result = validateIdList(message.ids, limits.maxIdsPerRequest);
@@ -380,7 +384,7 @@ export function validateHyperMessagePayload(
         }
         return message.ids.length === 0
             ? { ok: false, reason: 'ops_offer ids must not be empty' }
-            : { ok: true, value: message };
+            : { ok: true, value: {} };
     }
     if (message.type === 'ops_req') {
         const result = validateIdList(message.ids, limits.maxIdsPerRequest);
@@ -391,7 +395,7 @@ export function validateHyperMessagePayload(
             return { ok: false, reason: 'ops_req ids must be unique' };
         }
         return message.incomplete === undefined || message.incomplete === true
-            ? { ok: true, value: message }
+            ? { ok: true, value: {} }
             : { ok: false, reason: 'incomplete must be true when present' };
     }
     if (message.type === 'ordered_catchup_req') {
@@ -406,7 +410,7 @@ export function validateHyperMessagePayload(
     } else if (message.type === 'neg_close') {
         reason = validateContinuation(message.continuation, 'continuation', true);
     }
-    return reason ? { ok: false, reason } : { ok: true, value: message };
+    return reason ? { ok: false, reason } : { ok: true, value: {} };
 }
 
 export function validateOperationContentIds(

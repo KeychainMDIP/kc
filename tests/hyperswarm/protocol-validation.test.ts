@@ -272,6 +272,15 @@ describe('hyperswarm protocol validation', () => {
             ok: false,
             reason: 'ID at index 1 must be 64 hexadecimal characters',
         });
+        for (const type of ['ops_offer', 'ops_req'] as const) {
+            expect(validateHyperMessagePayload({
+                type, sessionId: 's', transferId: 0,
+                ids: ['a'.repeat(64), 'a'.repeat(64)],
+            }, limits)).toMatchObject({
+                ok: false,
+                reason: `${type} ids must be unique`,
+            });
+        }
         expect(validateHyperMessageEnvelope({
             ...base('ops_req'), sessionId: 's', transferId: -1, ids: [],
         })).toMatchObject({ ok: false });

@@ -29,7 +29,7 @@ import {
     chunkIds,
     chunkOperationsForPush,
     estimateOperationBytes,
-    validateOperationPage,
+    type ValidatedOperationPage,
 } from './negentropy/transfer.js';
 import {
     normalizeInboundOpsPushBatch,
@@ -363,21 +363,23 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     let slotGeneration = 0;
     let activeSlot: { peerKey: string; sessionId: string; generation: number } | null = null;
 
-    function validateCurrentPayload(peerKey: string, message: NegentropyMessage): boolean {
+    function validateCurrentPayload(
+        peerKey: string,
+        message: NegentropyMessage,
+    ): ReturnType<typeof validateHyperMessagePayload> {
         const result = validateHyperMessagePayload(message, {
             maxIdsPerRequest: options.maxIdsPerRequest,
             maxOpsPerPush: options.maxOpsPerPush,
             maxBytesPerPush: options.maxBytesPerPush,
             maxRecordsPerWindow: MAX_NEGENTROPY_WINDOW_RECORDS,
         });
-        if (result.ok) {
-            return true;
+        if (!result.ok) {
+            const connection = options.getConnection(peerKey);
+            if (connection) {
+                options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
+            }
         }
-        const connection = options.getConnection(peerKey);
-        if (connection) {
-            options.onProtocolViolation(peerKey, `invalid_${message.type}: ${result.reason}`, connection);
-        }
-        return false;
+        return result;
     }
 
     function trackWork<T>(task: Promise<T>): Promise<T> {
@@ -2151,8 +2153,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
         if (session.initiator || session.localRequest || session.receivedRequest
-            || msg.transferId !== session.nextRemoteTransferId
-            || msg.ids.length !== new Set(msg.ids.map(id => id.toLowerCase())).size) {
+            || msg.transferId !== session.nextRemoteTransferId) {
             reportProtocolViolation(peerKey, 'invalid or overlapping ops_offer');
             return;
         }
@@ -2200,8 +2201,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!session) {
             return;
         }
-        if (msg.ids.length !== new Set(msg.ids.map(id => id.toLowerCase())).size
-            || session.localRequest || session.receivedRequest) {
+        if (session.localRequest || session.receivedRequest) {
             reportProtocolViolation(peerKey, 'invalid or overlapping ops_req');
             return;
         }
@@ -2298,7 +2298,11 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
     }
 
-    async function handleOpsPushMessage(peerKey: string, msg: OpsPushMessage): Promise<void> {
+    async function handleOpsPushMessage(
+        peerKey: string,
+        msg: OpsPushMessage,
+        page: ValidatedOperationPage,
+    ): Promise<void> {
         const session = getCurrentTransferSession(peerKey, msg);
         if (!session) {
             return;
@@ -2308,25 +2312,17 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, 'ops_push does not match the active request');
             return;
         }
-        const content = validateOperationContentIds(msg.operations, options.cipher);
+        const content = validateOperationContentIds(page.operations, options.cipher);
         if (!content.ok) {
             reportProtocolViolation(peerKey, `invalid_ops_push: ${content.reason}`);
             return;
         }
-        const batch = normalizeInboundOpsPushBatch(msg.operations);
-        if (batch.length !== msg.operations.length) {
+        const batch = normalizeInboundOpsPushBatch(page.operations);
+        if (batch.length !== page.operations.length) {
             reportProtocolViolation(peerKey, 'ops_push contains duplicate operations');
             return;
         }
-        const page = validateOperationPage(msg.operations, {
-            maxOpsPerPush: options.maxOpsPerPush,
-            maxBytesPerPush: options.maxBytesPerPush,
-        });
-        if (!page.ok) {
-            reportProtocolViolation(peerKey, `invalid_ops_push: ${page.reason}`);
-            return;
-        }
-        const reservation = options.operationPages.reserve(page.value.bytes);
+        const reservation = options.operationPages.reserve(page.bytes);
         if (!reservation) {
             sendNegClose(peerKey, session, 'ops_push_import_capacity');
             closePeerSession(peerKey, 'ops_push_import_capacity');
@@ -2654,7 +2650,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         // Validate transfer bounds before looking up protocol state. Otherwise a peer can
         // send oversized messages for made-up sessions and bypass the limits through an
         // early "unknown session" return.
-        if (!validateCurrentPayload(peerKey, message)) {
+        const payload = validateCurrentPayload(peerKey, message);
+        if (!payload.ok) {
             return;
         }
         try {
@@ -2678,7 +2675,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return;
             }
             if (message.type === 'ops_push') {
-                await handleOpsPushMessage(peerKey, message);
+                await handleOpsPushMessage(peerKey, message, payload.value.operationPage!);
                 return;
             }
             if (message.type === 'ops_ack') {
