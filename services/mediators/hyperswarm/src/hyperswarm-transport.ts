@@ -6,12 +6,11 @@ import {
     createConnectionInfo,
     type ConnectionInfo,
 } from './mediator-state.js';
-import {
-    isSyncMessage,
-    type HyperMessage,
-    type PingMessage,
-    type QueueMessage,
-    type SyncMessage,
+import type {
+    HyperMessage,
+    PingMessage,
+    QueueMessage,
+    SyncMessage,
 } from './protocol-messages.js';
 import { recordProtocolStrike, type MediatorSyncStats } from './sync-stats.js';
 import {
@@ -758,7 +757,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
                 return;
             }
             await options.onQueue(peerKey, message, connection, payload.value);
-        } else if (isSyncMessage(message)) {
+        } else {
             await options.onSyncMessage(peerKey, message, connection);
         }
     }

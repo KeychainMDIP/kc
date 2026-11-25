@@ -1,4 +1,3 @@
-import { Operation } from '@mdip/gatekeeper/types';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
 import { MDIP_EPOCH_SECONDS } from './windows.js';
@@ -10,7 +9,6 @@ export interface PeerCapabilities {
     latestTs?: number;
     ordered?: OrderedCatchupCapability;
 }
-
 export interface OrderedCatchupCapability {
     count: number;
     sourceReady: boolean;
@@ -133,18 +131,6 @@ export function normalizeNegentropyIds(ids: Array<string | Uint8Array>): string[
 
         if (NEG_SYNC_ID_RE.test(hex)) {
             unique.add(hex);
-        }
-    }
-
-    return Array.from(unique);
-}
-
-export function extractOperationHashes(operations: Operation[]): string[] {
-    const unique = new Set<string>();
-    for (const operation of operations) {
-        const hash = operation.signature?.hash?.toLowerCase();
-        if (hash && NEG_SYNC_ID_RE.test(hash)) {
-            unique.add(hash);
         }
     }
 

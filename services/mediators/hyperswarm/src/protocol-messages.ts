@@ -7,11 +7,7 @@ import type {
 
 export const WIRE_PROTOCOL_VERSION = 2;
 
-export interface HyperMessageBase {
-    type: string;
-}
-
-export interface PingMessage extends HyperMessageBase {
+export interface PingMessage {
     type: 'ping';
     version: typeof WIRE_PROTOCOL_VERSION;
     name?: string;
@@ -20,7 +16,7 @@ export interface PingMessage extends HyperMessageBase {
     ordered?: OrderedCatchupCapability;
 }
 
-export interface QueueMessage extends HyperMessageBase {
+export interface QueueMessage {
     type: 'queue';
     operations: Operation[];
 }
@@ -44,7 +40,7 @@ export const NEG_CLOSE_OUTCOMES = [
 
 export type NegCloseOutcome = typeof NEG_CLOSE_OUTCOMES[number];
 
-export interface NegOpenMessage extends HyperMessageBase {
+export interface NegOpenMessage {
     type: 'neg_open';
     sessionId: string;
     windowSeq: number;
@@ -54,7 +50,7 @@ export interface NegOpenMessage extends HyperMessageBase {
     previousContinuation?: NegentropyContinuation;
 }
 
-export interface NegMsgMessage extends HyperMessageBase {
+export interface NegMsgMessage {
     type: 'neg_msg';
     sessionId: string;
     windowSeq: number;
@@ -63,7 +59,7 @@ export interface NegMsgMessage extends HyperMessageBase {
     continuation: NegentropyContinuation;
 }
 
-export interface NegCloseMessage extends HyperMessageBase {
+export interface NegCloseMessage {
     type: 'neg_close';
     sessionId: string;
     windowSeq: number;
@@ -72,7 +68,7 @@ export interface NegCloseMessage extends HyperMessageBase {
     continuation?: NegentropyContinuation;
 }
 
-export interface OpsReqMessage extends HyperMessageBase {
+export interface OpsReqMessage {
     type: 'ops_req';
     sessionId: string;
     transferId: number;
@@ -80,14 +76,14 @@ export interface OpsReqMessage extends HyperMessageBase {
     incomplete?: true;
 }
 
-export interface OpsOfferMessage extends HyperMessageBase {
+export interface OpsOfferMessage {
     type: 'ops_offer';
     sessionId: string;
     transferId: number;
     ids: string[];
 }
 
-export interface OpsPushMessage extends HyperMessageBase {
+export interface OpsPushMessage {
     type: 'ops_push';
     sessionId: string;
     transferId: number;
@@ -96,7 +92,7 @@ export interface OpsPushMessage extends HyperMessageBase {
     operations: Operation[];
 }
 
-export interface OpsAckMessage extends HyperMessageBase {
+export interface OpsAckMessage {
     type: 'ops_ack';
     sessionId: string;
     transferId: number;
@@ -104,13 +100,13 @@ export interface OpsAckMessage extends HyperMessageBase {
     incomplete?: true;
 }
 
-export interface OrderedCatchupReqMessage extends HyperMessageBase {
+export interface OrderedCatchupReqMessage {
     type: 'ordered_catchup_req';
     sessionId: string;
     after?: SyncStoreOrderedCursor;
 }
 
-export interface OrderedCatchupPushMessage extends HyperMessageBase {
+export interface OrderedCatchupPushMessage {
     type: 'ordered_catchup_push';
     sessionId: string;
     cursor: SyncStoreOrderedCursor;
@@ -118,7 +114,7 @@ export interface OrderedCatchupPushMessage extends HyperMessageBase {
     operations: Operation[];
 }
 
-export interface OrderedCatchupDoneMessage extends HyperMessageBase {
+export interface OrderedCatchupDoneMessage {
     type: 'ordered_catchup_done';
     sessionId: string;
 }
@@ -138,20 +134,3 @@ export type HyperMessage =
     | OrderedCatchupDoneMessage;
 
 export type SyncMessage = Exclude<HyperMessage, QueueMessage | PingMessage>;
-
-const SYNC_MESSAGE_TYPES = new Set<SyncMessage['type']>([
-    'ordered_catchup_req',
-    'ordered_catchup_push',
-    'ordered_catchup_done',
-    'neg_open',
-    'neg_msg',
-    'ops_offer',
-    'ops_req',
-    'ops_push',
-    'ops_ack',
-    'neg_close',
-]);
-
-export function isSyncMessage(message: HyperMessage): message is SyncMessage {
-    return SYNC_MESSAGE_TYPES.has(message.type as SyncMessage['type']);
-}

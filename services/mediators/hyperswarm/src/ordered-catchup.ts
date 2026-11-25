@@ -9,8 +9,6 @@ export type OrderedCatchupDecisionReason =
     | 'substantially_behind'
     | 'peer_unsupported'
     | 'peer_unready'
-    | 'peer_counts_missing'
-    | 'peer_ordered_count_mismatch'
     | 'peer_not_ahead'
     | 'not_far_behind';
 
@@ -19,7 +17,6 @@ export type ExpectedOrderedCatchupRequestReason =
     | 'substantially_behind'
     | 'local_unready'
     | 'peer_unsupported'
-    | 'peer_counts_missing'
     | 'peer_not_behind'
     | 'not_far_behind';
 

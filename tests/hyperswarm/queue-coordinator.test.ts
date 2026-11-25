@@ -108,7 +108,6 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local',
-            createQueueMessage: () => ({ type: 'queue' as const }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
         const message = { type: 'queue' as const, operations: [operation] };
@@ -133,7 +132,6 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
         const message = { type: 'queue' as const, operations: [operation] };
@@ -163,7 +161,7 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue: async () => [operation], clearQueue },
             cipher: { hashJSON: () => 'batch-hash' } as Pick<CipherNode, 'hashJSON'>,
             syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
-            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue' }), relay,
+            getNodeKey: () => 'local', relay,
             onProtocolViolation: jest.fn(),
         });
         await coordinator.flush();
@@ -188,7 +186,7 @@ describe('queue coordinator', () => {
             gatekeeper: { getQueue, clearQueue },
             cipher,
             syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
-            getNodeKey: () => 'local', createQueueMessage: () => ({ type: 'queue' }), relay,
+            getNodeKey: () => 'local', relay,
             onProtocolViolation,
         });
         const message = { type: 'queue' as const, operations: [operation] };
@@ -232,7 +230,6 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -262,7 +259,6 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, recovering: false, indexEpoch: 'old-epoch', enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -292,7 +288,6 @@ describe('queue coordinator', () => {
                 enqueue: jest.fn(async () => importResult()),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -331,9 +326,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({
-                type: 'queue',
-            }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -376,7 +368,6 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -414,7 +405,6 @@ describe('queue coordinator', () => {
             syncStats,
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -446,7 +436,6 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -485,7 +474,6 @@ describe('queue coordinator', () => {
             syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -538,7 +526,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -585,7 +572,6 @@ describe('queue coordinator', () => {
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -627,7 +613,6 @@ describe('queue coordinator', () => {
             cipher, syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay, onProtocolViolation: jest.fn(),
         });
         const message = { type: 'queue' as const, operations: [operation] };
@@ -679,7 +664,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -720,7 +704,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -762,7 +745,6 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation,
         });
@@ -813,7 +795,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -879,7 +860,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation,
         });
@@ -949,7 +929,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1000,7 +979,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1056,7 +1034,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1100,7 +1077,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1150,7 +1126,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1199,7 +1174,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1250,7 +1224,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1309,7 +1282,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1361,7 +1333,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1408,7 +1379,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1446,7 +1416,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => undefined,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1486,7 +1455,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: () => connection,
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1527,7 +1495,6 @@ describe('queue coordinator', () => {
             getNodeKey: () => 'local-key',
             getConnection: peerKey => connections.get(peerKey),
             requestRepair,
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1570,7 +1537,6 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1612,7 +1578,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         })).toThrow('maxRecentOutcomes must be a positive safe integer');
@@ -1642,7 +1607,6 @@ describe('queue coordinator', () => {
                 })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });
@@ -1685,7 +1649,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation,
         });
@@ -1736,7 +1699,6 @@ describe('queue coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => ({ available: true, recovering: false, enqueue } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1764,7 +1726,6 @@ describe('queue coordinator', () => {
             gatekeeper,
             cipher, syncStats: createMediatorSyncStats(), getImportPipeline: () => pipeline,
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         });
 
@@ -1790,7 +1751,6 @@ describe('queue coordinator', () => {
             cipher: new CipherNode(), syncStats: createMediatorSyncStats(),
             getImportPipeline: () => ({ available: true } as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' as const }),
             relay: jest.fn(async () => undefined), onProtocolViolation: jest.fn(),
         };
         const disconnected = createQueueCoordinator({ ...base, getConnection, requestRepair });
@@ -1830,7 +1790,6 @@ describe('queue coordinator', () => {
                 enqueue: jest.fn(async () => importResult({ retryable: true })),
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1859,7 +1818,6 @@ describe('queue coordinator', () => {
             operationPages,
             getImportPipeline: () => ({ available: true, enqueue: jest.fn() } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay: jest.fn(async () => undefined),
             onProtocolViolation: jest.fn(),
         });
@@ -1912,7 +1870,6 @@ describe('queue coordinator', () => {
                 enqueue,
             } as unknown as ImportPipeline),
             getNodeKey: () => 'local-key',
-            createQueueMessage: () => ({ type: 'queue' }),
             relay,
             onProtocolViolation: jest.fn(),
         });

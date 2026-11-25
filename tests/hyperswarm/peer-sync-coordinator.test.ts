@@ -27,6 +27,8 @@ describe('peer sync coordinator targeted repair', () => {
         const getActiveSessionCount = jest.fn(() => 0);
         const negentropy = {
             getActiveSessionCount,
+            hasActiveSession: jest.fn(() => false),
+            markStoreChanged: jest.fn(),
             startSession,
         } as unknown as ReturnType<typeof createNegentropyCoordinator>;
         const ordered = {
@@ -38,7 +40,6 @@ describe('peer sync coordinator targeted repair', () => {
         let current: ConnectionInfo | undefined = connection;
         const syncStats = createMediatorSyncStats();
         const coordinator = createPeerSyncCoordinator({
-            wireVersion: 2,
             windowSize: 25_000,
             repairIntervalMs: 1_000,
             syncStats,
@@ -72,12 +73,12 @@ describe('peer sync coordinator targeted repair', () => {
     }
 
     it.each([
-        null,
-        1,
-        3,
-    ])('rejects repair for wire version %s', async wireVersion => {
+        ['sent', false, true],
+        ['received', true, false],
+    ] as const)('rejects repair before the initial ping is %s', async (_side, sent, received) => {
         const harness = createHarness();
-        harness.connection.wireVersion = wireVersion;
+        harness.connection.initialPingSent = sent;
+        harness.connection.initialPingReceived = received;
 
         await expect(harness.coordinator.requestRepair(
             harness.peerKey,
@@ -226,6 +227,35 @@ describe('peer sync coordinator targeted repair', () => {
 
         expect(harness.count).not.toHaveBeenCalled();
         expect(harness.startSession).not.toHaveBeenCalled();
+        await harness.coordinator.shutdown();
+    });
+
+    it('waits for both initial pings after replacement before the ordered handoff', async () => {
+        const harness = createHarness();
+        const replacement = {
+            ...harness.connection,
+            initialPingSent: false,
+            initialPingReceived: false,
+            negentropySynced: false,
+        } as ConnectionInfo;
+        harness.setCurrent(replacement);
+        const outcome = {
+            peerKey: harness.peerKey,
+            sessionId: 'ordered',
+            reason: 'complete',
+            durationMs: 0,
+        };
+
+        await expect(harness.coordinator.handleOrderedCatchupComplete(outcome)).resolves.toBe(false);
+        expect(harness.startSession).not.toHaveBeenCalled();
+
+        replacement.initialPingSent = true;
+        replacement.initialPingReceived = true;
+        await expect(harness.coordinator.handleOrderedCatchupComplete(outcome)).resolves.toBe(true);
+        expect(harness.startSession).toHaveBeenCalledWith(harness.peerKey, {
+            source: 'ordered_catchup_complete',
+            initiator: true,
+        });
         await harness.coordinator.shutdown();
     });
 });

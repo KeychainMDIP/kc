@@ -42,7 +42,6 @@ interface QueueCoordinatorOptions {
     getNodeKey(): string;
     getConnection(peerKey: string): ConnectionInfo | undefined;
     requestRepair(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
-    createQueueMessage(): Omit<QueueMessage, 'operations'>;
     relay(message: QueueMessage, excludedPeerKey?: string): Promise<void>;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
     now?: () => number;
@@ -112,7 +111,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
         for (const operations of pages) {
             try {
                 await options.relay({
-                    ...options.createQueueMessage(),
+                    type: 'queue',
                     operations,
                 }, peerKey);
             }
@@ -471,7 +470,7 @@ export function createQueueCoordinator(options: QueueCoordinatorOptions) {
                 throw error;
             }
             await options.relay({
-                ...options.createQueueMessage(),
+                type: 'queue',
                 operations: batch,
             });
             options.syncStats.queueOpsRelayed += batch.length;

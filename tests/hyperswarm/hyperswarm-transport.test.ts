@@ -213,7 +213,7 @@ describe('hyperswarm transport routing', () => {
     it('ignores coalesced messages after closing an incompatible peer', async () => {
         const peerKey = Buffer.alloc(32, 0x24).toString('hex');
         const connection = new FakeConnection(0x24);
-        const { transport, syncStats, onPing, onQueue } = createTransport();
+        const { transport, syncStats, onPing, onQueue, onSyncMessage } = createTransport();
         transport.setConnection(peerKey, createConnectionInfo({
             connection: connection as unknown as HyperswarmConnection,
             peerName: 'peer',
@@ -221,12 +221,16 @@ describe('hyperswarm transport routing', () => {
         const input = Buffer.concat([
             encodeFramedMessage(JSON.stringify(ping({ version: 3 }))),
             encodeFramedMessage(JSON.stringify({ type: 'queue', operations: [] })),
+            encodeFramedMessage(JSON.stringify({
+                type: 'neg_close', sessionId: 's', windowSeq: 0, round: 0, outcome: 'complete',
+            })),
         ]);
 
         await transport.processInboundPeerData(peerKey, input);
 
         expect(onPing).not.toHaveBeenCalled();
         expect(onQueue).not.toHaveBeenCalled();
+        expect(onSyncMessage).not.toHaveBeenCalled();
         expect(connection.destroyed).toBe(true);
         expect(syncStats.wireVersionIncompatibilityClosures).toBe(1);
         expect(syncStats.protocolViolationCooldowns).toBe(0);

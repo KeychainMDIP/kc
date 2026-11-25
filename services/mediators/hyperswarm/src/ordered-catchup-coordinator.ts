@@ -17,7 +17,6 @@ import {
 } from './ordered-catchup.js';
 import type {
     HyperMessage,
-    HyperMessageBase,
     OrderedCatchupDoneMessage,
     OrderedCatchupPushMessage,
     OrderedCatchupReqMessage,
@@ -46,7 +45,6 @@ type OrderedCatchupMessage =
     | OrderedCatchupPushMessage
     | OrderedCatchupDoneMessage;
 type OrderedCatchupTerminalReason = 'ordered_catchup_complete' | 'ordered_catchup_done';
-type OrderedCatchupMessageType = OrderedCatchupMessage['type'];
 
 interface ClientSession {
     indexEpoch?: string;
@@ -88,10 +86,6 @@ export interface OrderedCatchupOutcome {
     durationMs: number;
 }
 
-type CreateBaseMessage = <T extends OrderedCatchupMessageType>(
-    type: T,
-) => Omit<HyperMessageBase, 'type'> & { type: T };
-
 export interface OrderedCatchupCoordinatorOptions {
     maxOpsPerPage: number;
     maxBytesPerPage: number;
@@ -104,7 +98,6 @@ export interface OrderedCatchupCoordinatorOptions {
     operationPages: OperationPageBudget;
     getConnection(peerKey: string): ConnectionInfo | undefined;
     createSessionId(peerKey: string): string;
-    createBaseMessage: CreateBaseMessage;
     sendToPeer(peerKey: string, message: HyperMessage): boolean;
     sendBulkToPeer(peerKey: string, message: HyperMessage): Promise<boolean>;
     onIndexRefreshed(source: string, result: BootstrapResult): Promise<void>;
@@ -257,7 +250,7 @@ export function createOrderedCatchupCoordinator(
 
     function sendDone(peerKey: string, sessionId: string): boolean {
         const message: OrderedCatchupDoneMessage = {
-            ...options.createBaseMessage('ordered_catchup_done'),
+            type: 'ordered_catchup_done',
             sessionId,
         };
         const sent = sendMessage(peerKey, message);
@@ -267,7 +260,7 @@ export function createOrderedCatchupCoordinator(
 
     function sendRequest(session: ClientSession): boolean {
         const message: OrderedCatchupReqMessage = {
-            ...options.createBaseMessage('ordered_catchup_req'),
+            type: 'ordered_catchup_req',
             sessionId: session.sessionId,
             after: session.cursor ?? undefined,
         };
@@ -538,7 +531,7 @@ export function createOrderedCatchupCoordinator(
                     }
 
                     const push: OrderedCatchupPushMessage = {
-                        ...options.createBaseMessage('ordered_catchup_push'),
+                        type: 'ordered_catchup_push',
                         sessionId: message.sessionId,
                         cursor: nextCursor,
                         hasMore: rows.length > pageRows.length,
@@ -853,7 +846,6 @@ export function createOrderedCatchupCoordinator(
                 serverPendingUntil: expectation?.until ?? 0,
                 serverPendingReason: expectation?.reason ?? null,
                 serverPendingGap: expectation?.gap ?? 0,
-                transitionActive: transitions.has(peerKey),
             };
         },
         finishTransition(peerKey: string): void {

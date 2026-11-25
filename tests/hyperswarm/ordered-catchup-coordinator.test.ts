@@ -101,7 +101,6 @@ function createCoordinator(overrides: Partial<Pick<
         operationPages: overrides.operationPages ?? createOperationPageBudget(5, 5_000_000),
         getConnection: overrides.getConnection ?? (key => key === peerKey ? connection : undefined),
         createSessionId: () => 'session',
-        createBaseMessage: type => ({ type }),
         sendToPeer,
         sendBulkToPeer: overrides.sendBulkToPeer ?? (async (key, message) => sendToPeer(key, message)),
         onIndexRefreshed: overrides.onIndexRefreshed ?? jest.fn(async () => undefined),

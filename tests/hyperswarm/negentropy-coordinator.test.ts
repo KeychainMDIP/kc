@@ -102,7 +102,6 @@ describe('Negentropy coordinator', () => {
         const onProtocolViolation = jest.fn();
         const terminatePeerConnection = jest.fn();
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -110,7 +109,6 @@ describe('Negentropy coordinator', () => {
             bulkReads: createBulkWorkScheduler(2), operationPages,
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => `local-${nextSession++}`,
-            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation, onSessionClosed, onIndexRefreshed: async () => {},
@@ -213,12 +211,6 @@ describe('Negentropy coordinator', () => {
             expect(coordinator.hasActiveSession(peerKey)).toBe(false);
 
             coordinator.setAdapter(adapter as never);
-            connection.wireVersion = 1;
-            await coordinator.handleMessage(peerKey, {
-                ...guardOpen, sessionId: 'remote-incompatible', round: 0,
-            });
-            expect(coordinator.hasActiveSession(peerKey)).toBe(false);
-            connection.wireVersion = 2;
 
             const authorizationOpen = await startLocal();
             const activeTransfer = {
@@ -1057,7 +1049,6 @@ describe('Negentropy coordinator', () => {
         };
         const sendToPeer = jest.fn<Parameters<typeof createNegentropyCoordinator>[0]['sendToPeer']>(() => true);
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -1066,7 +1057,6 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'local-session',
-            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection: () => undefined,
             onProtocolViolation: jest.fn(), onSessionClosed: async () => {}, onIndexRefreshed: async () => {},
@@ -1163,7 +1153,6 @@ describe('Negentropy coordinator', () => {
         const startSession = jest.fn(async (peerKey: string) => { activePeer = peerKey; return true; });
         const reset = jest.fn(() => { activePeer = null; });
         const coordinator = createPeerSyncCoordinator({
-            wireVersion: 2,
             windowSize: 25_000, repairIntervalMs: 300_000, syncStats: createMediatorSyncStats(),
             getNodeKey: () => 'ff'.repeat(32), getPeerKeys: () => [...connections.keys()],
             getConnection: key => connections.get(key),
@@ -1257,7 +1246,7 @@ describe('Negentropy coordinator', () => {
         const onSessionClosed = jest.fn(async () => {});
         const terminatePeerConnection = jest.fn();
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2, maxRecordsPerWindow: 16,
+            maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8, maxIdsPerRequest: 1_000, maxIdsPerLookup: 1_000,
             maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024, idleTimeoutMs: 120_000,
             repairIntervalMs: 60_000,
@@ -1265,8 +1254,7 @@ describe('Negentropy coordinator', () => {
             bulkReads: createBulkWorkScheduler(2),
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => connection,
-            createSessionId: () => 'session', createBaseMessage: type => ({ type }),
-            sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
+            createSessionId: () => 'session', sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed, onIndexRefreshed,
         });
@@ -1380,7 +1368,6 @@ describe('Negentropy coordinator', () => {
             hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
         } };
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, syncStore: store, importPipeline, syncStats: createMediatorSyncStats(), cipher,
@@ -1389,7 +1376,6 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'reset-session',
-            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async (key, message) => sendToPeer(key, message),
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: jest.fn(), onSessionClosed,
@@ -1503,7 +1489,6 @@ describe('Negentropy coordinator', () => {
         const bulkReads = createBulkWorkScheduler(2);
         const cancelBulkReads = jest.spyOn(bulkReads, 'cancel');
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8,
             maxIdsPerRequest: 1_000,
@@ -1520,7 +1505,6 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({ type }),
             sendToPeer: () => true,
             sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => true,
@@ -1622,7 +1606,6 @@ describe('Negentropy coordinator', () => {
         const terminatePeerConnection = jest.fn();
         const onSessionClosed = jest.fn(async () => undefined);
         coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16, maxRoundsPerSession: 8, maxIdsPerRequest: 1_000,
             maxIdsPerLookup: 1_000, maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
             idleTimeoutMs: 120_000, repairIntervalMs: 60_000,
@@ -1631,7 +1614,6 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => connection,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({ type }),
             sendToPeer, sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false, terminatePeerConnection,
             onProtocolViolation: () => undefined, onSessionClosed, onIndexRefreshed: async () => {},
@@ -1767,7 +1749,6 @@ describe('Negentropy coordinator', () => {
         };
         const sendToPeer = jest.fn(() => true);
         const coordinator = createNegentropyCoordinator({
-            wireVersion: 2,
             maxRecordsPerWindow: 16,
             maxRoundsPerSession: 8,
             maxIdsPerRequest: 1_000,
@@ -1784,7 +1765,6 @@ describe('Negentropy coordinator', () => {
             operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: key => key === peerKey ? connection : undefined,
             createSessionId: () => 'test-session',
-            createBaseMessage: type => ({ type }),
             sendToPeer,
             sendBulkToPeer: async () => true,
             canStartBackgroundPrebuild: () => false,

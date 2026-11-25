@@ -121,8 +121,7 @@ describe('negentropy sync policy', () => {
 
     it('starts post ordered catch-up negentropy only after import work drains', () => {
         const base = {
-            peerConnected: true,
-            peerSupportsNegentropyTransport: true,
+            peerReady: true,
             hasActiveSession: false,
             importQueueLength: 0,
             importQueueRunning: 0,
@@ -131,11 +130,7 @@ describe('negentropy sync policy', () => {
         };
 
         expect(shouldStartPostOrderedCatchupNegentropy(base)).toBe(true);
-        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerConnected: false })).toBe(false);
-        expect(shouldStartPostOrderedCatchupNegentropy({
-            ...base,
-            peerSupportsNegentropyTransport: false,
-        })).toBe(false);
+        expect(shouldStartPostOrderedCatchupNegentropy({ ...base, peerReady: false })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, hasActiveSession: true })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueLength: 1 })).toBe(false);
         expect(shouldStartPostOrderedCatchupNegentropy({ ...base, importQueueRunning: 1 })).toBe(false);

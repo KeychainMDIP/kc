@@ -1,10 +1,8 @@
-import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
     buildOrderedCatchupCapabilities,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
-    extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
     parseRemoteWindow,
@@ -13,17 +11,6 @@ import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/nege
 
 const h = (c: string) => c.repeat(64);
 const nativeFrame = (value: string): Uint8Array => Buffer.from(value);
-
-function makeOp(hash: string): Operation {
-    return {
-        type: 'create',
-        signature: {
-            hash,
-            signed: '2026-02-11T00:00:00.000Z',
-            value: 'sig',
-        },
-    };
-}
 
 describe('negentropy protocol helpers', () => {
     it('encodes native frames as canonical base64', () => {
@@ -116,20 +103,6 @@ describe('negentropy protocol helpers', () => {
 
         expect(ids).toStrictEqual([a, b]);
         expect(ids.every(id => NEG_SYNC_ID_RE.test(id))).toBe(true);
-    });
-
-    it('extracts unique valid operation hashes', () => {
-        const a = h('a');
-        const b = h('b');
-        const operations: Operation[] = [
-            makeOp(a.toUpperCase()),
-            makeOp(b),
-            makeOp('invalid'),
-            { type: 'create' },
-        ];
-
-        const hashes = extractOperationHashes(operations);
-        expect(hashes).toStrictEqual([a, b]);
     });
 
     it('rejects malformed remote reconciliation windows', () => {

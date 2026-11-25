@@ -105,7 +105,6 @@ async function createHarness() {
         onRelayFailure: (key, connection) => queue.handleRelayFailure(key, connection),
     });
     negentropy = createNegentropyCoordinator({
-        wireVersion: 2,
         maxRecordsPerWindow: 25_000, maxRoundsPerSession: 64,
         maxIdsPerRequest: 1_000, maxIdsPerLookup: 32,
         maxOpsPerPush: 300, maxBytesPerPush: 512 * 1024,
@@ -114,7 +113,6 @@ async function createHarness() {
         operationPages: pages,
         getConnection: key => transport.getConnection(key),
         createSessionId: key => `session-${key}`,
-        createBaseMessage: type => ({ type }),
         sendToPeer: (key, message) => transport.sendToPeer(key, message),
         sendBulkToPeer: (key, message) => transport.sendBulkToPeer(key, message),
         canStartBackgroundPrebuild: () => false,
@@ -129,7 +127,6 @@ async function createHarness() {
         repairIntervalMs: 300_000, gatekeeper, cipher, syncStats: stats, bulkReads,
         operationPages: pages, getImportPipeline: () => pipeline, getNodeKey: () => 'local',
         getConnection: key => transport.getConnection(key), requestRepair: repair,
-        createQueueMessage: () => ({ type: 'queue' }),
         relay: (message, excludedPeerKey) => transport.relay(message, excludedPeerKey),
         onProtocolViolation: (key, reason, connection) => transport.reportProtocolViolation(key, reason, connection),
     });

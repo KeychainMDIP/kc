@@ -12,8 +12,7 @@ export interface RepairSchedulingInput {
 }
 
 export interface PostOrderedCatchupNegentropyInput {
-    peerConnected: boolean;
-    peerSupportsNegentropyTransport: boolean;
+    peerReady: boolean;
     hasActiveSession: boolean;
     importQueueLength: number;
     importQueueRunning: number;
@@ -107,11 +106,7 @@ export function shouldSchedulePeriodicRepair(input: RepairSchedulingInput): bool
 }
 
 export function shouldStartPostOrderedCatchupNegentropy(input: PostOrderedCatchupNegentropyInput): boolean {
-    if (!input.peerConnected) {
-        return false;
-    }
-
-    if (!input.peerSupportsNegentropyTransport) {
+    if (!input.peerReady) {
         return false;
     }
 

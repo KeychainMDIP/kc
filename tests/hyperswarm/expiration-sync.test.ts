@@ -45,7 +45,7 @@ describe('expiration and historical synchronization', () => {
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
             getConnection: () => undefined,
             requestRepair: async () => false,
-            createQueueMessage: () => ({ type: 'queue' }), relay,
+            relay,
             onProtocolViolation: jest.fn(),
         });
         try {
