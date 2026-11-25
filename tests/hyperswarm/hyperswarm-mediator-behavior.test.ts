@@ -53,7 +53,7 @@ interface WireBody {
     continuation?: Cursor | null;
     previousContinuation?: Cursor | null;
     ids?: string[];
-    data?: Operation[];
+    operations?: Operation[];
 }
 
 interface WireMessage {
@@ -367,10 +367,10 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
     let currentWindow: WireWindow | null = null;
     for (const message of messages) {
         expect(message.body.sessionId).toBe(opens[0].body.sessionId);
-        expect(message.body.windowSeq).toEqual(expect.any(Number));
-        const windowSeq = message.body.windowSeq!;
 
         if (message.body.type === 'neg_open') {
+            expect(message.body.windowSeq).toEqual(expect.any(Number));
+            const windowSeq = message.body.windowSeq!;
             expect(message.body.window).toBeDefined();
             const nextWindow = message.body.window!;
             if (currentWindow && message.body.windowSeq! > currentWindowSeq! && nextWindow.after) {
@@ -395,9 +395,9 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             currentWindowSeq = windowSeq;
             currentWindow = nextWindow;
         }
-        else {
+        else if (message.body.type === 'neg_msg' || message.body.type === 'neg_close') {
             expect(currentWindowSeq).not.toBeNull();
-            expect(windowSeq).toBe(currentWindowSeq);
+            expect(message.body.windowSeq).toBe(currentWindowSeq);
         }
 
         const continuation = message.body.continuation;
@@ -410,7 +410,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
 
         if (message.body.type === 'ops_push' && deliveredWriteSequences.has(message.sequence)) {
             const receiver = message.direction === 'a-to-b' ? knownB : knownA;
-            for (const operation of message.body.data ?? []) {
+            for (const operation of message.body.operations ?? []) {
                 receiver.add(operationCursor(operation).id);
             }
         }
@@ -444,16 +444,17 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             expect(compareSyncCursor(next.after!, previous.after)).toBeGreaterThan(0);
         }
 
-        const previousWindowSeq = opens[index - 1].body.windowSeq;
+        const previousOpen = opens[index - 1];
+        const previousWindowSeq = previousOpen.body.windowSeq;
         const observedCursors = messages.flatMap(message => {
-            if (message.sequence >= opens[index].sequence
-                || message.body.windowSeq !== previousWindowSeq
+            if (message.sequence < previousOpen.sequence
+                || message.sequence >= opens[index].sequence
                 || !deliveredWriteSequences.has(message.sequence)) {
                 return [];
             }
             const progressCursor = message.body.continuation ?? undefined;
             const pushedCursors = message.body.type === 'ops_push'
-                ? (message.body.data ?? []).map(operationCursor)
+                ? (message.body.operations ?? []).map(operationCursor)
                 : [];
             return [...(progressCursor ? [progressCursor] : []), ...pushedCursors];
         });
@@ -486,10 +487,11 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
 function assertNoOperationTransfer(link: RecordingDuplexPair): void {
     const messages = decodeWire(link);
     expect(messages.filter(message => message.body.type === 'ops_req').flatMap(message => message.body.ids ?? [])).toEqual([]);
-    expect(messages.filter(message => message.body.type === 'ops_push').flatMap(message => message.body.data ?? [])).toEqual([]);
+    expect(messages.filter(message => message.body.type === 'ops_push')
+        .flatMap(message => message.body.operations ?? [])).toEqual([]);
     expect(messages
-        .filter(message => message.body.type === 'batch' || message.body.type === 'queue')
-        .flatMap(message => message.body.data ?? [])).toEqual([]);
+        .filter(message => message.body.type === 'queue')
+        .flatMap(message => message.body.operations ?? [])).toEqual([]);
 }
 
 function uniqueOperations(operations: Operation[]): Operation[] {
@@ -1073,10 +1075,15 @@ describe('hyperswarm mediator behavior', () => {
         });
         const pushesWithArrival = messages.filter(message => (
             message.body.type === 'ops_push'
-            && (message.body.data ?? []).some(operation => operationCursor(operation).id === arrivingId)
+            && (message.body.operations ?? []).some(operation => operationCursor(operation).id === arrivingId)
+        ));
+        const continuationOpen = messages.find(message => (
+            message.body.type === 'neg_open'
+            && message.body.windowSeq! > initialOpen.body.windowSeq!
         ));
         expect(pushesWithArrival.length).toBeGreaterThan(0);
-        expect(pushesWithArrival.every(message => message.body.windowSeq !== initialOpen.body.windowSeq)).toBe(true);
+        expect(continuationOpen).toBeDefined();
+        expect(pushesWithArrival.every(message => message.sequence > continuationOpen!.sequence)).toBe(true);
         await assertConverged(driver, union);
 
         await driver.reconnect();

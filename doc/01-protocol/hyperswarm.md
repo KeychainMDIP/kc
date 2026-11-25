@@ -84,3 +84,36 @@ authorizes a request using that exact cursor; `hasMore: false` completes the
 transfer after the page imports. `ordered_catchup_done` is the distinct
 zero-row answer to an outstanding request and carries neither operations nor a
 cursor. Only one request is outstanding at a time.
+
+## Authorized operation transfer
+
+Only the session initiator creates transfers. It assigns one increasing
+`transferId` across all windows and rounds, using a fresh value for either an
+offer or a direct request. The responder echoes an offer's ID in its request.
+The ID is never reused within the session.
+
+```ts
+type OperationTransferMessage =
+  | { type: 'ops_offer'; sessionId: string; transferId: number; ids: string[] }
+  | { type: 'ops_req'; sessionId: string; transferId: number; ids: string[];
+      incomplete?: true }
+  | { type: 'ops_push'; sessionId: string; transferId: number; page: number;
+      hasMore: boolean; operations: Operation[] }
+  | { type: 'ops_ack'; sessionId: string; transferId: number; page: number;
+      incomplete?: true };
+```
+
+An offer response may request only IDs from that active offer; a direct request
+must use the next transfer ID. A push may contain only the exact IDs authorized
+by its active request. Pages are zero-based and stop-and-wait: the sender does
+not send page `n + 1` until the receiver acknowledges page `n`. `hasMore: true`
+requires at least one authorized ID to remain, while `hasMore: false` requires
+the page to complete the authorized set. `incomplete` is present only as the
+literal value `true` when local retry delay or capacity prevented full work.
+
+The transfer is retired after its final acknowledgement, or when the session
+closes, is replaced, times out, disconnects, resets, or shuts down. Stale,
+future, repeated, unsolicited, wrong-page, and wrong-session traffic is rejected
+before import. If an authorized operation disappears or fails content-ID
+verification before sending, the session closes as failed instead of sending a
+partial terminal page.

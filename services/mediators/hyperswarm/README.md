@@ -84,7 +84,9 @@ exact continuation cursor. It permits one active import plus two requested pages
 waiting. Negentropy v2 uses `ops_offer`, `ops_req`, `ops_push`, and `ops_ack`.
 A push must contain only IDs in the receiver's current request. Each direction
 has at most one operation request outstanding, and the sender waits for the
-current page to be imported and acknowledged before sending another.
+current page to be imported and acknowledged before sending another. The
+session initiator assigns one increasing `transferId` across offers and direct
+requests; push and acknowledgement pages reuse that ID and a zero-based `page`.
 
 Live gossip admits one active and one waiting batch globally. Completed and
 retry-delayed batch hashes share a 4,096-entry FIFO cache. Pending input and local

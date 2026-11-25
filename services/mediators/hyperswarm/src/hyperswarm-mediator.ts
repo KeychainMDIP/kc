@@ -758,8 +758,7 @@ export const __test = {
 
     async receiveMsg(peerKey: string, msg: Record<string, unknown>): Promise<void> {
         const type = typeof msg.type === 'string' ? msg.type : 'unknown';
-        const needsRound = type === 'neg_open' || type === 'neg_msg' || type === 'neg_close'
-            || type === 'ops_offer' || type === 'ops_req' || type === 'ops_push' || type === 'ops_ack';
+        const needsRound = type === 'neg_open' || type === 'neg_msg' || type === 'neg_close';
         await transport.receiveMessage(peerKey, {
             ...createBaseMessage(type as HyperMessage['type']),
             ...(needsRound ? { round: negentropyCoordinator.getExpectedInboundRound(peerKey, type) } : {}),

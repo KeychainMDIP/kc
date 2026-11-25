@@ -89,22 +89,19 @@ type NegentropyMessage =
     | NegCloseMessage;
 
 interface ActiveOffer {
-    offerId: number;
-    round: number;
+    transferId: number;
     ids: Set<string>;
 }
 
 interface LocalRequest {
-    requestId: number;
-    round: number;
+    transferId: number;
     expectedIds: Set<string>;
     deliveredIds: Set<string>;
     nextPage: number;
 }
 
 interface ReceivedRequest {
-    requestId: number;
-    round: number;
+    transferId: number;
     remainingIds: string[];
     page: number;
     awaitingAck: boolean;
@@ -142,10 +139,8 @@ interface PeerSyncSession {
     sentPushMaxCursor: SyncStoreCursor | null;
     sentPushCount: number;
     remoteContinuation: SyncStoreCursor | null | undefined;
-    nextOfferId: number;
-    nextRequestId: number;
-    nextRemoteOfferId: number;
-    nextRemoteRequestId: number;
+    nextTransferId: number;
+    nextRemoteTransferId: number;
     activeOffer: ActiveOffer | null;
     localRequest: LocalRequest | null;
     receivedRequest: ReceivedRequest | null;
@@ -299,10 +294,8 @@ function createSessionState(
         sentPushMaxCursor: null,
         sentPushCount: 0,
         remoteContinuation: undefined,
-        nextOfferId: 0,
-        nextRequestId: 0,
-        nextRemoteOfferId: 0,
-        nextRemoteRequestId: 0,
+        nextTransferId: 0,
+        nextRemoteTransferId: 0,
         activeOffer: null,
         localRequest: null,
         receivedRequest: null,
@@ -1223,19 +1216,18 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         peerKey: string,
         session: PeerSyncSession,
         ids: string[],
-        settings: { offerId?: number; deferred?: boolean } = {},
+        settings: { transferId?: number; incomplete?: boolean } = {},
     ): boolean {
-        const requestId = session.nextRequestId;
-        session.nextRequestId += 1;
+        const transferId = settings.transferId ?? session.nextTransferId;
+        if (settings.transferId === undefined) {
+            session.nextTransferId += 1;
+        }
         const msg: OpsReqMessage = {
             ...options.createBaseMessage('ops_req'),
             sessionId: session.sessionId,
-            windowSeq: getExpectedWindowSeq(session),
-            round: session.rounds,
-            requestId,
-            ...(settings.offerId === undefined ? {} : { offerId: settings.offerId }),
+            transferId,
             ids,
-            ...(settings.deferred ? { deferred: true } : {}),
+            ...(settings.incomplete ? { incomplete: true } : {}),
         };
         if (!options.sendToPeer(peerKey, msg)) {
             closePeerSession(peerKey, 'send_ops_req_failed');
@@ -1244,8 +1236,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         options.syncStats.negentropyOpsReqSent += ids.length;
         if (ids.length > 0) {
             session.localRequest = {
-                requestId,
-                round: session.rounds,
+                transferId,
                 expectedIds: new Set(ids),
                 deliveredIds: new Set<string>(),
                 nextPage: 0,
@@ -1255,15 +1246,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
     }
 
     function sendOpsOffer(peerKey: string, session: PeerSyncSession, ids: string[]): boolean {
-        const offerId = session.nextOfferId;
-        session.nextOfferId += 1;
-        session.activeOffer = { offerId, round: session.rounds, ids: new Set(ids) };
+        const transferId = session.nextTransferId;
+        session.nextTransferId += 1;
+        session.activeOffer = { transferId, ids: new Set(ids) };
         const msg: OpsOfferMessage = {
             ...options.createBaseMessage('ops_offer'),
             sessionId: session.sessionId,
-            windowSeq: getExpectedWindowSeq(session),
-            round: session.rounds,
-            offerId,
+            transferId,
             ids,
         };
         if (!options.sendToPeer(peerKey, msg)) {
@@ -1286,6 +1275,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 return;
             }
             try {
+                const failTransfer = () => {
+                    sendNegClose(peerKey, session, 'failed');
+                    closePeerSession(peerKey, 'failed');
+                };
                 const requestedIds = new Set(request.remainingIds);
                 const availableIds = new Set<string>();
                 let rows: SyncOperationRecord[] = [];
@@ -1296,14 +1289,16 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     }
                     const content = validateOperationContentIds(fetched.map(row => row.operation), options.cipher);
                     if (!content.ok) {
-                        throw new Error(content.reason);
+                        failTransfer();
+                        return;
                     }
                     for (const row of fetched) {
                         const mapped = mapOperationToSyncKey(row.operation);
                         const rowId = row.id.toLowerCase();
                         if (!mapped.ok || mapped.value.idHex !== rowId || !requestedIds.has(rowId)
                     || availableIds.has(rowId)) {
-                            throw new Error(`invalid requested operation record ${row.id}`);
+                            failTransfer();
+                            return;
                         }
                         availableIds.add(rowId);
                     }
@@ -1325,9 +1320,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     rows = orderedRows
                         .filter(row => firstPageIds.has(row.id.toLowerCase()));
                 }
-                const data = orderSyncRecordsForPush(rows).map(row => row.operation);
+                if (availableIds.size !== requestedIds.size) {
+                    failTransfer();
+                    return;
+                }
+                const operations = orderSyncRecordsForPush(rows).map(row => row.operation);
                 const deliveredIds = new Set<string>();
-                for (const operation of data) {
+                for (const operation of operations) {
                     const mapped = mapOperationToSyncKey(operation);
                     if (mapped.ok) {
                         deliveredIds.add(mapped.value.idHex);
@@ -1344,12 +1343,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 const msg: OpsPushMessage = {
                     ...options.createBaseMessage('ops_push'),
                     sessionId: session.sessionId,
-                    windowSeq: getExpectedWindowSeq(session),
-                    round: request.round,
-                    requestId: request.requestId,
+                    transferId: request.transferId,
                     page: request.page,
                     hasMore,
-                    data,
+                    operations,
                 };
                 if (!await options.sendBulkToPeer(peerKey, msg)) {
                     if (peerSessions.get(peerKey) === session) {
@@ -1360,10 +1357,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 if (peerSessions.get(peerKey) !== session || session.receivedRequest !== request) {
                     return;
                 }
-                session.sentPushCount += data.length;
+                session.sentPushCount += operations.length;
                 request.awaitingAck = true;
                 touchPeerSession(peerKey);
-                options.syncStats.negentropyOpsPushSent += data.length;
+                options.syncStats.negentropyOpsPushSent += operations.length;
             }
             finally {
                 outboundReservation.release();
@@ -2099,16 +2096,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             log.warn({ peer: shortName(peerKey), sessionId: msg.sessionId }, `ignoring ${msg.type} for unknown session`);
             return null;
         }
-        if (msg.round < session.rounds) {
-            return null;
-        }
-        if (msg.round > session.rounds) {
-            reportProtocolViolation(peerKey, `${msg.type} is for a future round`);
-            return null;
-        }
-        if (!isCurrentSessionWindow(peerKey, session, msg.windowSeq, msg.type)) {
-            return null;
-        }
         return session;
     }
 
@@ -2132,7 +2119,8 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!session) {
             return;
         }
-        if (session.initiator || session.localRequest || msg.offerId !== session.nextRemoteOfferId
+        if (session.initiator || session.localRequest || session.receivedRequest
+            || msg.transferId !== session.nextRemoteTransferId
             || msg.ids.length !== new Set(msg.ids.map(id => id.toLowerCase())).size) {
             reportProtocolViolation(peerKey, 'invalid or overlapping ops_offer');
             return;
@@ -2144,7 +2132,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             reportProtocolViolation(peerKey, 'ops_offer repeats IDs or exceeds the active window');
             return;
         }
-        session.nextRemoteOfferId += 1;
+        session.nextRemoteTransferId += 1;
         ids.forEach(id => session.seenOfferedIds.add(id));
         let known: Set<string> | null;
         try {
@@ -2163,11 +2151,14 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
         const missing = ids.filter(id => !known.has(id));
         const filtered = options.importPipeline.filterRetryDelayedIds(missing);
-        const deferred = filtered.pendingIds.length > 0 || filtered.capacityDeferredIds.length > 0;
-        if (deferred) {
+        const incomplete = filtered.pendingIds.length > 0 || filtered.capacityDeferredIds.length > 0;
+        if (incomplete) {
             session.windowIncomplete = true;
         }
-        if (!sendOpsRequest(peerKey, session, filtered.eligibleIds, { offerId: msg.offerId, deferred })) {
+        if (!sendOpsRequest(peerKey, session, filtered.eligibleIds, {
+            transferId: msg.transferId,
+            incomplete,
+        })) {
             return;
         }
         touchPeerSession(peerKey);
@@ -2178,43 +2169,42 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (!session) {
             return;
         }
-        if (msg.requestId !== session.nextRemoteRequestId
-            || msg.ids.length !== new Set(msg.ids.map(id => id.toLowerCase())).size
-            || session.receivedRequest) {
+        if (msg.ids.length !== new Set(msg.ids.map(id => id.toLowerCase())).size
+            || session.localRequest || session.receivedRequest) {
             reportProtocolViolation(peerKey, 'invalid or overlapping ops_req');
             return;
         }
         const ids = msg.ids.map(id => id.toLowerCase());
-        if (msg.offerId !== undefined) {
+        if (session.initiator) {
             const offer = session.activeOffer;
-            if (!session.initiator || !offer || offer.offerId !== msg.offerId || offer.round !== msg.round
+            if (!offer || offer.transferId !== msg.transferId
                 || ids.some(id => !offer.ids.has(id))
-                || (msg.deferred === true && ids.length === offer.ids.size)) {
+                || (msg.incomplete === true && ids.length === offer.ids.size)) {
                 reportProtocolViolation(peerKey, 'ops_req does not match the active offer');
                 return;
             }
-            if (msg.deferred) {
+            if (msg.incomplete) {
                 session.windowIncomplete = true;
             }
             session.activeOffer = null;
         } else {
             const maxRecords = getSessionWindow(session)?.maxRecords ?? options.maxRecordsPerWindow;
-            if (session.initiator || ids.length === 0 || ids.some(id => session.seenDirectRequestIds.has(id))
+            if (msg.transferId !== session.nextRemoteTransferId || ids.length === 0 || msg.incomplete
+                || ids.some(id => session.seenDirectRequestIds.has(id))
                 || session.seenDirectRequestIds.size + ids.length > maxRecords) {
                 reportProtocolViolation(peerKey, 'unauthorized or repeated direct ops_req');
                 return;
             }
+            session.nextRemoteTransferId += 1;
             ids.forEach(id => session.seenDirectRequestIds.add(id));
         }
-        session.nextRemoteRequestId += 1;
         options.syncStats.negentropyOpsReqReceived += ids.length;
         if (ids.length === 0) {
             await driveInitiatorTransfers(peerKey, session);
             return;
         }
         session.receivedRequest = {
-            requestId: msg.requestId,
-            round: msg.round,
+            transferId: msg.transferId,
             remainingIds: ids,
             page: 0,
             awaitingAck: false,
@@ -2283,22 +2273,21 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
         const request = session.localRequest;
-        if (!request || request.requestId !== msg.requestId || request.round !== msg.round
-            || request.nextPage !== msg.page) {
+        if (!request || request.transferId !== msg.transferId || request.nextPage !== msg.page) {
             reportProtocolViolation(peerKey, 'ops_push does not match the active request');
             return;
         }
-        const content = validateOperationContentIds(msg.data, options.cipher);
+        const content = validateOperationContentIds(msg.operations, options.cipher);
         if (!content.ok) {
             reportProtocolViolation(peerKey, `invalid_ops_push: ${content.reason}`);
             return;
         }
-        const batch = normalizeInboundOpsPushBatch(msg.data);
-        if (batch.length !== msg.data.length) {
+        const batch = normalizeInboundOpsPushBatch(msg.operations);
+        if (batch.length !== msg.operations.length) {
             reportProtocolViolation(peerKey, 'ops_push contains duplicate operations');
             return;
         }
-        const page = validateOperationPage(msg.data, {
+        const page = validateOperationPage(msg.operations, {
             maxOpsPerPush: options.maxOpsPerPush,
             maxBytesPerPush: options.maxBytesPerPush,
         });
@@ -2324,6 +2313,10 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 pageIds.push(mapped.value.idHex);
             }
             const delivered = new Set([...request.deliveredIds, ...pageIds]);
+            if (msg.hasMore && batch.length === 0) {
+                reportProtocolViolation(peerKey, 'a non-final ops_push must not be empty');
+                return;
+            }
             if (msg.hasMore && delivered.size === request.expectedIds.size) {
                 reportProtocolViolation(peerKey, 'a non-final ops_push delivered every requested operation');
                 return;
@@ -2412,11 +2405,9 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             const ack: OpsAckMessage = {
                 ...options.createBaseMessage('ops_ack'),
                 sessionId: session.sessionId,
-                windowSeq: getExpectedWindowSeq(session),
-                round: msg.round,
-                requestId: msg.requestId,
+                transferId: msg.transferId,
                 page: msg.page,
-                ...(imported.capacityDeferredIds.length > 0 ? { deferred: true } : {}),
+                ...(imported.capacityDeferredIds.length > 0 ? { incomplete: true } : {}),
             };
             if (!options.sendToPeer(peerKey, ack)) {
                 closePeerSession(peerKey, 'send_ops_ack_failed');
@@ -2440,13 +2431,13 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return;
         }
         const request = session.receivedRequest;
-        if (!request || !request.awaitingAck || request.requestId !== msg.requestId
-            || request.round !== msg.round || request.page !== msg.page) {
+        if (!request || !request.awaitingAck || request.transferId !== msg.transferId
+            || request.page !== msg.page) {
             reportProtocolViolation(peerKey, 'ops_ack does not match the outstanding page');
             return;
         }
         request.awaitingAck = false;
-        if (msg.deferred) {
+        if (msg.incomplete) {
             session.windowIncomplete = true;
         }
         request.page += 1;

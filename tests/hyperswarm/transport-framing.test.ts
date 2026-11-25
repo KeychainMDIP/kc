@@ -51,7 +51,7 @@ describe('hyperswarm transport framing', () => {
     });
 
     it('buffers a message split across multiple chunks', () => {
-        const json = JSON.stringify({ type: 'ops_push', data: [{ id: 'abc' }] });
+        const json = JSON.stringify({ type: 'ops_push', operations: [{ id: 'abc' }] });
         const framed = encodeFramedMessage(json);
 
         const first = decodeFramedMessages(framed.subarray(0, 3));
@@ -125,9 +125,7 @@ describe('hyperswarm transport framing', () => {
         const opsPush = JSON.stringify({
             type: 'ops_push',
             sessionId: 'session-1',
-            windowSeq: 0,
-            round: 10,
-            data: [{ signature: { hash: '00c8d13206871afdb0f93a4a91b14ca186a4b030b0dc53b7d726f265db89e54f' } }],
+            operations: [{ signature: { hash: '00c8d13206871afdb0f93a4a91b14ca186a4b030b0dc53b7d726f265db89e54f' } }],
         });
         const negClose = JSON.stringify({
             type: 'neg_close',

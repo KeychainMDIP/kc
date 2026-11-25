@@ -50,10 +50,10 @@ const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
     neg_open: new Set(['type', 'sessionId', 'windowSeq', 'window', 'round', 'frame', 'previousContinuation']),
     neg_msg: new Set(['type', 'sessionId', 'windowSeq', 'round', 'frame', 'continuation']),
     neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'reason', 'continuation']),
-    ops_offer: new Set(['type', 'sessionId', 'windowSeq', 'round', 'offerId', 'ids']),
-    ops_req: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'offerId', 'ids', 'deferred']),
-    ops_push: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'page', 'hasMore', 'data']),
-    ops_ack: new Set(['type', 'sessionId', 'windowSeq', 'round', 'requestId', 'page', 'deferred']),
+    ops_offer: new Set(['type', 'sessionId', 'transferId', 'ids']),
+    ops_req: new Set(['type', 'sessionId', 'transferId', 'ids', 'incomplete']),
+    ops_push: new Set(['type', 'sessionId', 'transferId', 'page', 'hasMore', 'operations']),
+    ops_ack: new Set(['type', 'sessionId', 'transferId', 'page', 'incomplete']),
 };
 
 export interface ProtocolPayloadLimits extends OpsPushBatchingOptions {
@@ -265,15 +265,15 @@ function validateSessionEnvelope(message: Record<string, unknown>): string | nul
             ? 'hasMore must be a boolean'
             : null;
     }
+    if (message.type === 'ops_offer' || message.type === 'ops_req'
+        || message.type === 'ops_push' || message.type === 'ops_ack') {
+        return validateSafeInteger(message.transferId, 'transferId')
+            ?? (message.type === 'ops_push' || message.type === 'ops_ack'
+                ? validateSafeInteger(message.page, 'page')
+                : null);
+    }
     return validateSafeInteger(message.windowSeq, 'windowSeq')
         ?? validateSafeInteger(message.round, 'round')
-        ?? (message.type === 'ops_offer' ? validateSafeInteger(message.offerId, 'offerId') : null)
-        ?? (message.type === 'ops_req' || message.type === 'ops_push' || message.type === 'ops_ack'
-            ? validateSafeInteger(message.requestId, 'requestId')
-            : null)
-        ?? (message.type === 'ops_push' || message.type === 'ops_ack'
-            ? validateSafeInteger(message.page, 'page')
-            : null)
         ?? (message.type === 'neg_close' && message.reason !== undefined
             ? validateBoundedString(message.reason, 'reason')
             : null);
@@ -320,9 +320,6 @@ export function validateQueueMessagePayload(
     message: QueueMessage,
     limits: OpsPushBatchingOptions,
 ): ProtocolValidationResult<ValidatedOperationPage> {
-    if (Object.prototype.hasOwnProperty.call(message, 'deferred')) {
-        return { ok: false, reason: 'deferred is not valid for queue' };
-    }
     return validateOperationPage(message.operations, limits);
 }
 
@@ -331,20 +328,15 @@ export function validateHyperMessagePayload(
     limits: ProtocolPayloadLimits,
 ): ProtocolValidationResult<HyperMessage> {
     let reason: string | null = null;
-    const messageType = message.type;
     if (message.type === 'queue') {
         const result = validateQueueMessagePayload(message, limits);
         return result.ok ? { ok: true, value: message } : result;
-    }
-    if (messageType !== 'ops_req' && messageType !== 'ops_ack'
-        && Object.prototype.hasOwnProperty.call(message, 'deferred')) {
-        return { ok: false, reason: `deferred is not valid for ${messageType}` };
     }
     if (message.type === 'ops_push') {
         if (typeof message.hasMore !== 'boolean') {
             return { ok: false, reason: 'hasMore must be a boolean' };
         }
-        const result = validateOperationPage(message.data, limits);
+        const result = validateOperationPage(message.operations, limits);
         if (!result.ok) {
             return result;
         }
@@ -353,9 +345,9 @@ export function validateHyperMessagePayload(
             : { ok: true, value: message };
     }
     if (message.type === 'ops_ack') {
-        return message.deferred === undefined || typeof message.deferred === 'boolean'
+        return message.incomplete === undefined || message.incomplete === true
             ? { ok: true, value: message }
-            : { ok: false, reason: 'deferred must be a boolean' };
+            : { ok: false, reason: 'incomplete must be true when present' };
     }
     if (message.type === 'ordered_catchup_push') {
         if (message.cursor === undefined) {
@@ -393,22 +385,9 @@ export function validateHyperMessagePayload(
         if (result.value.length !== message.ids.length) {
             return { ok: false, reason: 'ops_req ids must be unique' };
         }
-        if (message.offerId !== undefined) {
-            const offerError = validateSafeInteger(message.offerId, 'offerId');
-            if (offerError) {
-                return { ok: false, reason: offerError };
-            }
-            if (message.deferred !== undefined && typeof message.deferred !== 'boolean') {
-                return { ok: false, reason: 'deferred must be a boolean' };
-            }
-            return { ok: true, value: message };
-        }
-        if (message.ids.length === 0) {
-            return { ok: false, reason: 'a direct ops_req must not be empty' };
-        }
-        return message.deferred === undefined
+        return message.incomplete === undefined || message.incomplete === true
             ? { ok: true, value: message }
-            : { ok: false, reason: 'deferred is valid only for an offered request' };
+            : { ok: false, reason: 'incomplete must be true when present' };
     }
     if (message.type === 'ordered_catchup_req') {
         reason = validateCursor(message.after, 'after');

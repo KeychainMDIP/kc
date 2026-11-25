@@ -33,11 +33,10 @@ interface WireMessage {
         sessionId?: string;
         windowSeq?: string;
         round?: number;
-        requestId?: number;
+        transferId?: number;
         page?: number;
         hasMore?: boolean;
         ids?: string[];
-        data?: Operation[];
         operations?: Operation[];
     };
 }
@@ -71,7 +70,7 @@ function decodeWire(link: RecordingDuplexPair): WireMessage[] {
 function writeOperationPush(
     link: RecordingDuplexPair,
     base: WireMessage['body'],
-    data: Operation[],
+    operations: Operation[],
     page: number,
     hasMore: boolean,
 ): void {
@@ -79,7 +78,7 @@ function writeOperationPush(
         ...base,
         page,
         hasMore,
-        data,
+        operations,
     })));
 }
 
@@ -1001,8 +1000,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 .filter(message => message.body.type === 'ops_req')
                 .flatMap(message => message.body.ids ?? [])).toStrictEqual([]);
             expect(secondMessages
-                .filter(message => ['ops_push', 'ordered_catchup_push', 'batch', 'queue'].includes(message.body.type))
-                .flatMap(message => message.body.operations ?? message.body.data ?? [])).toStrictEqual([]);
+                .filter(message => ['ops_push', 'ordered_catchup_push', 'queue'].includes(message.body.type))
+                .flatMap(message => message.body.operations ?? [])).toStrictEqual([]);
 
             const canonicalA = (await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
                 .map(row => ({ ts: row.ts, id: row.id }));

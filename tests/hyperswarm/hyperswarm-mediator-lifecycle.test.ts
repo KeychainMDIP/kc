@@ -97,9 +97,7 @@ function encodeFramedMessage(payload: string | Uint8Array): Buffer {
         return encodeTransportFrame(payload);
     }
     const message = value as Record<string, unknown>;
-    const needsRound = new Set([
-        'neg_open', 'neg_msg', 'neg_close', 'ops_offer', 'ops_req', 'ops_push', 'ops_ack',
-    ]).has(String(message.type));
+    const needsRound = new Set(['neg_open', 'neg_msg', 'neg_close']).has(String(message.type));
     return encodeTransportFrame(JSON.stringify(needsRound && message.round === undefined
         ? { round: 0, ...message }
         : message));
@@ -405,9 +403,9 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         const requestEntry = peer.pair.transcript.filter(entry => entry.messageType === 'ops_req').at(-1)!;
         const request = JSON.parse(decodeFramedMessages(requestEntry.raw).messages[0].toString('utf8'));
         await running.node.run(() => running.node.mediator.__test.receiveMsg(peer.peerKey, {
-            type: 'ops_push', sessionId: message.sessionId, windowSeq: message.windowSeq, round: request.round,
-            requestId: request.requestId, page: 0, hasMore: false,
-            data: [missed],
+            type: 'ops_push', sessionId: message.sessionId,
+            transferId: request.transferId, page: 0, hasMore: false,
+            operations: [missed],
         }));
         await eventually(async () => await running.store.has(missed.signature!.hash));
         expect(running.node.gatekeeperClient.importBatch).toHaveBeenCalledTimes(2);
@@ -999,7 +997,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             decodeFramedMessages(entry.raw).messages.map(message => (
                 JSON.parse(message.toString('utf8')) as {
                     type?: string;
-                    requestId?: number;
+                    transferId?: number;
                     round?: number;
                 }
             ))
@@ -1022,12 +1020,10 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await sendFramed({
             type: 'ops_push',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: firstRequest.round,
-            requestId: firstRequest.requestId,
+            transferId: firstRequest.transferId,
             page: 0,
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         });
         await eventually(() => running.store.has(operationId));
         await running.store.upsertMany([{
@@ -1049,12 +1045,10 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         await sendFramed({
             type: 'ops_push',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: secondRequest.round,
-            requestId: secondRequest.requestId,
+            transferId: secondRequest.transferId,
             page: 0,
             hasMore: false,
-            data: [knownOperation],
+            operations: [knownOperation],
         });
         await running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
         expect(running.node.run(
@@ -1411,9 +1405,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_offer',
             sessionId,
-            windowSeq,
-            round: 1,
-            offerId: 0,
+            transferId: 0,
             ids: [operationId],
         })));
         await peer.pair.pumpUntilIdle();
@@ -1421,16 +1413,14 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             entry => entry.direction === 'a-to-b' && entry.messageType === 'ops_req',
         ).at(-1)!;
         const [requestPayload] = decodeFramedMessages(requestEntry.raw).messages;
-        const request = JSON.parse(requestPayload.toString('utf8')) as { requestId: number; round: number };
+        const request = JSON.parse(requestPayload.toString('utf8')) as { transferId: number };
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',
             sessionId,
-            windowSeq,
-            round: request.round,
-            requestId: request.requestId,
+            transferId: request.transferId,
             page: 0,
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         })));
         await peer.pair.pumpUntilIdle();
         expect(await running.store.has(operationId)).toBe(false);
@@ -1778,9 +1768,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_offer',
             sessionId,
-            windowSeq,
-            round: 1,
-            offerId: 0,
+            transferId: 0,
             ids: [operation.signature!.hash],
         })));
         await peer.pair.pumpUntilIdle();
@@ -1788,16 +1776,14 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             entry => entry.direction === 'a-to-b' && entry.messageType === 'ops_req',
         ).at(-1)!;
         const [requestPayload] = decodeFramedMessages(requestEntry.raw).messages;
-        const request = JSON.parse(requestPayload.toString('utf8')) as { requestId: number; round: number };
+        const request = JSON.parse(requestPayload.toString('utf8')) as { transferId: number };
         peer.pair.connectionB.write(encodeFramedMessage(JSON.stringify({
             type: 'ops_push',
             sessionId,
-            windowSeq,
-            round: request.round,
-            requestId: request.requestId,
+            transferId: request.transferId,
             page: 0,
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         })));
         await peer.pair.pumpUntilIdle();
 

@@ -308,9 +308,8 @@ describe('hostile peer integration', () => {
             await h.negentropy.initializeAdapter();
             expect(await h.negentropy.startSession(peer.key, { source: 'connect', initiator: true })).toBe(true);
             const open = JSON.parse(decodeFramedMessages(peer.lastWrite).messages[0].toString());
-            await h.send(peer, { ...base, type: 'ops_push', sessionId: open.sessionId,
-                windowSeq: open.windowSeq, round: open.round, requestId: 999, page: 0,
-                hasMore: false, data: [],
+            await h.send(peer, { ...base, type: 'ops_push', sessionId: open.sessionId, transferId: 999, page: 0,
+                hasMore: false, operations: [],
             });
             expect(peer.destroyed).toBe(true);
             expect(await h.store.count()).toBe(0);
@@ -328,9 +327,7 @@ describe('hostile peer integration', () => {
                 ...base,
                 type: 'ops_req',
                 sessionId: 'invented-session',
-                windowSeq: 0,
-                round: 0,
-                requestId: 0,
+                transferId: 0,
                 ids: Array.from({ length: limits.maxIdsPerRequest + 1 }, (_, index) =>
                     index.toString(16).padStart(64, '0')),
             });

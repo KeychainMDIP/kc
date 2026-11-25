@@ -76,14 +76,10 @@ describe('hyperswarm protocol validation', () => {
             ok: false,
             reason: 'operation page exceeds 2 operations',
         });
-        const deferred = { ...message, deferred: false } as unknown as QueueMessage;
-        expect(validateQueueMessagePayload(deferred, limits)).toMatchObject({
+        const incomplete = { ...message, incomplete: true } as unknown as QueueMessage;
+        expect(validateHyperMessageEnvelope(incomplete)).toMatchObject({
             ok: false,
-            reason: 'deferred is not valid for queue',
-        });
-        expect(validateHyperMessagePayload(deferred, limits)).toMatchObject({
-            ok: false,
-            reason: 'deferred is not valid for queue',
+            reason: 'queue contains unknown property incomplete',
         });
     });
 
@@ -171,29 +167,28 @@ describe('hyperswarm protocol validation', () => {
             ...base('ordered_catchup_push'), sessionId: 's', hasMore: 1, operations: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: '', windowSeq: 'w', round: 0, requestId: 0, ids: [],
+            ...base('ops_req'), sessionId: '', transferId: 0, ids: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: 1, windowSeq: 'w', round: 0, requestId: 0, ids: [],
+            ...base('ops_req'), sessionId: 1, transferId: 0, ids: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
-            ...base('ops_req'), sessionId: 's', windowSeq: 0, round: 0,
-            requestId: 0, offerId: 0, ids: [],
+            ...base('ops_req'), sessionId: 's', transferId: 0, ids: [],
         }).ok).toBe(true);
         for (const value of [
             {
-                ...base('ops_offer'), sessionId: 's', windowSeq: 'w', round: 0,
-                offerId: -1, ids: ['a'.repeat(64)],
+                ...base('ops_offer'), sessionId: 's',
+                transferId: -1, ids: ['a'.repeat(64)],
             },
             {
-                ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-                requestId: '0', ids: ['a'.repeat(64)],
+                ...base('ops_req'), sessionId: 's',
+                transferId: '0', ids: ['a'.repeat(64)],
             },
             {
-                ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-                requestId: 0, page: -1, hasMore: false, data: [],
+                ...base('ops_push'), sessionId: 's', transferId: 0,
+                page: -1, hasMore: false, operations: [],
             },
-            { ...base('ops_ack'), sessionId: 's', windowSeq: 'w', round: 0, requestId: 0, page: -1 },
+            { ...base('ops_ack'), sessionId: 's', transferId: 0, page: -1 },
         ]) {
             expect(validateHyperMessageEnvelope(value)).toMatchObject({ ok: false });
         }
@@ -202,75 +197,81 @@ describe('hyperswarm protocol validation', () => {
     it('validates operation, ID, cursor, window, and frame payload bounds', () => {
         const { value } = operation();
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, hasMore: false, data: [value],
+            ...base('ops_push'), sessionId: 's', transferId: 0,
+            page: 0, hasMore: false, operations: [value],
         } as never, limits).ok).toBe(true);
         expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0, requestId: 0,
+            ...base('ops_req'), sessionId: 's', transferId: 0,
             ids: ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_offer'), sessionId: 's', windowSeq: 'w', round: 0,
-            offerId: 0, ids: [],
+            ...base('ops_offer'), sessionId: 's',
+            transferId: 0, ids: [],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, ids: [],
+            ...base('ops_req'), sessionId: 's',
+            transferId: 0, ids: [],
+        } as never, limits).ok).toBe(true);
+        expect(validateHyperMessagePayload({
+            ...base('ops_push'), sessionId: 's', transferId: 0,
+            page: 0, hasMore: true, operations: [],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, hasMore: true, data: [],
+            ...base('ops_push'), sessionId: 's',
+            transferId: 0, page: 0, hasMore: true,
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, hasMore: true,
+            ...base('ops_push'), sessionId: 's', transferId: 0,
+            page: 0, hasMore: 1, operations: [],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, hasMore: 1, data: [],
+            ...base('ops_offer'), sessionId: 's',
+            transferId: 0, ids: ['invalid'],
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_offer'), sessionId: 's', windowSeq: 'w', round: 0,
-            offerId: 0, ids: ['invalid'],
-        } as never, limits)).toMatchObject({ ok: false });
-        expect(validateHyperMessagePayload({
-            ...base('ops_offer'), sessionId: 's', windowSeq: 'w', round: 0,
-            offerId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
+            ...base('ops_offer'), sessionId: 's',
+            transferId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
         } as never, limits)).toMatchObject({
             ok: false,
             reason: 'ID at index 1 must be 64 hexadecimal characters',
         });
         expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
+            ...base('ops_req'), sessionId: 's',
+            transferId: 0, ids: ['a'.repeat(64), 'A'.repeat(64)],
         } as never, limits)).toMatchObject({
             ok: false,
             reason: 'ID at index 1 must be 64 hexadecimal characters',
         });
+        expect(validateHyperMessageEnvelope({
+            ...base('ops_req'), sessionId: 's', transferId: -1, ids: [],
+        })).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_offer'), sessionId: 's', windowSeq: 'w', round: 0,
-            offerId: 0, ids: ['a'.repeat(64)], deferred: false,
+            ...base('ops_req'), sessionId: 's', transferId: 0, ids: [], incomplete: true,
+        } as never, limits).ok).toBe(true);
+        expect(validateHyperMessagePayload({
+            ...base('ops_req'), sessionId: 's', transferId: 0, ids: [], incomplete: 'true',
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_push'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, hasMore: false, data: [], deferred: false,
+            ...base('ops_req'), sessionId: 's', transferId: 0,
+            ids: ['a'.repeat(64)], incomplete: false,
         } as never, limits)).toMatchObject({ ok: false });
         expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, offerId: -1, ids: [],
+            ...base('ops_ack'), sessionId: 's', transferId: 0, page: 0, incomplete: 'true',
         } as never, limits)).toMatchObject({ ok: false });
-        expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, offerId: 0, ids: [], deferred: 'true',
-        } as never, limits)).toMatchObject({ ok: false });
-        expect(validateHyperMessagePayload({
-            ...base('ops_req'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, ids: ['a'.repeat(64)], deferred: false,
-        } as never, limits)).toMatchObject({ ok: false });
-        expect(validateHyperMessagePayload({
-            ...base('ops_ack'), sessionId: 's', windowSeq: 'w', round: 0,
-            requestId: 0, page: 0, deferred: 'true',
-        } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessageEnvelope({
+            ...base('ops_push'), sessionId: 's', transferId: 0, page: 0,
+            hasMore: false, operations: [], windowSeq: 0,
+        })).toMatchObject({
+            ok: false,
+            reason: 'ops_push contains unknown property windowSeq',
+        });
+        expect(validateHyperMessageEnvelope({
+            ...base('ops_offer'), sessionId: 's', transferId: 0,
+            ids: ['a'.repeat(64)], round: 0,
+        })).toMatchObject({
+            ok: false,
+            reason: 'ops_offer contains unknown property round',
+        });
         expect(validateHyperMessagePayload({
             ...base('ordered_catchup_req'), sessionId: 's', after: { syncOrder: '1', id: 'a'.repeat(64) },
         } as never, limits)).toMatchObject({ ok: false });

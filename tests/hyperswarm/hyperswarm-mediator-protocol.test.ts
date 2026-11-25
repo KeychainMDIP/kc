@@ -120,7 +120,7 @@ function encodeFramedMessage(payload: string | Uint8Array): Buffer {
     }
     const message = value as Record<string, unknown>;
     const needsRound = new Set([
-        'neg_open', 'neg_msg', 'neg_close', 'ops_offer', 'ops_req', 'ops_push', 'ops_ack',
+        'neg_open', 'neg_msg', 'neg_close',
     ]).has(String(message.type));
     return encodeTransportFrame(JSON.stringify(needsRound && message.round === undefined
         ? { round: 0, ...message }
@@ -136,7 +136,7 @@ function decodeWrites(pair: RecordingDuplexPair): Array<Record<string, unknown>>
 
 function requestedOpsPush(
     pair: RecordingDuplexPair,
-    data: Operation[],
+    operations: Operation[],
     overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
     const request = decodeWrites(pair).filter(message => message.type === 'ops_req').at(-1);
@@ -146,12 +146,10 @@ function requestedOpsPush(
     return {
         type: 'ops_push',
         sessionId: request.sessionId,
-        windowSeq: request.windowSeq,
-        round: request.round,
-        requestId: request.requestId,
+        transferId: request.transferId,
         page: 0,
         hasMore: false,
-        data,
+        operations,
         ...overrides,
     };
 }
@@ -161,23 +159,22 @@ async function deliverAuthorizedPush(
     peerKey: string,
     pair: RecordingDuplexPair,
     open: Record<string, unknown>,
-    data: Operation[],
+    operations: Operation[],
 ): Promise<void> {
-    const ids = data.map(operation => operation.signature!.hash);
+    const ids = operations.map(operation => operation.signature!.hash);
     let request = decodeWrites(pair).filter(message => (
         message.type === 'ops_req'
         && Array.isArray(message.ids)
         && ids.every(id => (message.ids as string[]).includes(id))
     )).at(-1);
     if (!request) {
-        const offerId = decodeWrites(pair).filter(message => message.type === 'ops_req' && message.offerId !== undefined).length;
-        const round = Number(decodeWrites(pair).filter(message => message.type === 'neg_msg').at(-1)?.round ?? 1);
+        const transferId = decodeWrites(pair).filter(message => (
+            message.type === 'ops_offer' || message.type === 'ops_req'
+        )).length;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round,
-            offerId,
+            transferId,
             ids,
         }));
         request = decodeWrites(pair).filter(message => message.type === 'ops_req').at(-1);
@@ -187,7 +184,7 @@ async function deliverAuthorizedPush(
     }
     await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
         peerKey,
-        requestedOpsPush(pair, data),
+        requestedOpsPush(pair, operations),
     ));
 }
 
@@ -898,10 +895,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             frame: { encoding: 'unsupported', data: '' },
         })],
         ['ops_req IDs', (open: Record<string, unknown>) => ({
-            type: 'ops_req', sessionId: open.sessionId, windowSeq: open.windowSeq, ids: ['invalid'],
+            type: 'ops_req', sessionId: open.sessionId, ids: ['invalid'],
         })],
         ['ops_push page', (open: Record<string, unknown>) => ({
-            type: 'ops_push', sessionId: open.sessionId, windowSeq: open.windowSeq, data: 'invalid',
+            type: 'ops_push', sessionId: open.sessionId, operations: 'invalid',
         })],
         ['neg_close progress', (open: Record<string, unknown>) => ({
             type: 'neg_close', sessionId: open.sessionId, windowSeq: open.windowSeq,
@@ -939,12 +936,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_push',
             sessionId: 'invented-session',
-            windowSeq: 'invented-window',
-            round: 0,
-            requestId: 0,
+            transferId: 0,
             page: 0,
             hasMore: false,
-            data: Array.from({ length: 301 }, () => ({})),
+            operations: Array.from({ length: 301 }, () => ({})),
         }));
 
         expect(lookup).not.toHaveBeenCalled();
@@ -1437,9 +1432,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify({
                 type: 'ops_req',
                 sessionId: 'unknown-session',
-                windowSeq: open.windowSeq,
-                round: 0,
-                requestId: 0,
+                transferId: 0,
                 ids: [hash('a')],
             })),
         ));
@@ -1656,38 +1649,31 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: offer.ids,
         }));
 
         let pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(1);
         expect(pushes[0]).toMatchObject({ page: 0, hasMore: true });
-        expect((pushes[0].data as Operation[])).toHaveLength(300);
+        expect((pushes[0].operations as Operation[])).toHaveLength(300);
         expect(Math.max(...lookupSizes)).toBeLessThanOrEqual(32);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
+            transferId: 0,
             page: 0,
         }));
         pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(2);
         expect(pushes[1]).toMatchObject({ page: 1, hasMore: false });
-        expect((pushes[1].data as Operation[])).toHaveLength(1);
+        expect((pushes[1].operations as Operation[])).toHaveLength(1);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
+            transferId: 0,
             page: 0,
         }));
         expect(protocolNode.node.run(
@@ -1726,40 +1712,33 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: offer.ids,
         }));
 
         let pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(1);
         expect(pushes[0]).toMatchObject({ page: 0, hasMore: true });
-        expect(Buffer.byteLength(JSON.stringify(pushes[0].data), 'utf8')).toBeLessThanOrEqual(512 * 1024);
+        expect(Buffer.byteLength(JSON.stringify(pushes[0].operations), 'utf8')).toBeLessThanOrEqual(512 * 1024);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
+            transferId: 0,
             page: 0,
         }));
         pushes = decodeWrites(pair).filter(message => message.type === 'ops_push');
         expect(pushes).toHaveLength(2);
         expect(pushes[1]).toMatchObject({ page: 1, hasMore: false });
-        expect(Buffer.byteLength(JSON.stringify(pushes[1].data), 'utf8')).toBeLessThanOrEqual(512 * 1024);
-        expect(pushes.flatMap(message => (message.data as Operation[]).map(
+        expect(Buffer.byteLength(JSON.stringify(pushes[1].operations), 'utf8')).toBeLessThanOrEqual(512 * 1024);
+        expect(pushes.flatMap(message => (message.operations as Operation[]).map(
             operation => operation.signature!.hash,
         )).sort()).toEqual(operations.map(operation => operation.signature!.hash).sort());
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
+            transferId: 0,
             page: 1,
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
@@ -1945,12 +1924,10 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_push',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: open.round,
-            requestId: 0,
+            transferId: 0,
             page: 0,
             hasMore: false,
-            data: [operation],
+            operations: [operation],
         }));
 
         expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
@@ -1985,7 +1962,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
             peerKey,
-            requestedOpsPush(pair, [operation], { requestId: 1 }),
+            requestedOpsPush(pair, [operation], { transferId: 1 }),
         ));
 
         expect(protocolNode.node.gatekeeperClient.importBatch).not.toHaveBeenCalled();
@@ -2167,12 +2144,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: [],
-            deferred: true,
+            incomplete: true,
         }));
 
         expect(decodeWrites(pair).some(message => message.type === 'ops_push')).toBe(false);
@@ -2218,23 +2192,18 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: [requestedId],
-            deferred: true,
+            incomplete: true,
         }));
         const push = decodeWrites(pair).find(message => message.type === 'ops_push')!;
         expect(push).toMatchObject({ page: 0, hasMore: false });
-        expect((push.data as Operation[]).map(operation => operation.signature!.hash)).toEqual([requestedId]);
+        expect((push.operations as Operation[]).map(operation => operation.signature!.hash)).toEqual([requestedId]);
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
+            transferId: 0,
             page: 0,
         }));
 
@@ -2275,10 +2244,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: offer.ids,
         }));
         const push = decodeWrites(pair).find(message => message.type === 'ops_push')!;
@@ -2286,11 +2252,9 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: push.round,
-            requestId: push.requestId,
+            transferId: push.transferId,
             page: push.page,
-            deferred: true,
+            incomplete: true,
         }));
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
@@ -2334,10 +2298,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: offer.round,
-            requestId: 0,
-            offerId: offer.offerId,
+            transferId: offer.transferId,
             ids: [unsolicited.signature!.hash],
         }));
 
@@ -2362,21 +2323,19 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            offerId: 0,
+            transferId: 0,
             ids: [operation.signature!.hash],
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'ops_req',
-            offerId: 0,
+            transferId: 0,
             ids: [],
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            offerId: 1,
+            transferId: 1,
             ids: [operation.signature!.hash],
         }));
         expect(protocolNode.node.run(
@@ -2395,8 +2354,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            offerId: 0,
+            transferId: 0,
             ids: [hash('a')],
         }));
 
@@ -2424,8 +2382,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            offerId: 0,
+            transferId: 0,
             ids: [operations[0].signature!.hash],
         }));
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(
@@ -2437,8 +2394,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_offer',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            offerId: 1,
+            transferId: 1,
             ids: [operations[1].signature!.hash],
         }));
 
@@ -2467,24 +2423,21 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            requestId: 0,
+            transferId: 0,
             ids: [operations[0].signature!.hash],
         }));
         const firstPush = decodeWrites(pair).find(message => message.type === 'ops_push')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            requestId: 0,
+            transferId: 0,
             page: firstPush.page,
         }));
 
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            requestId: 1,
+            transferId: 1,
             ids: [operations[1].signature!.hash],
         }));
 
@@ -2502,8 +2455,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            requestId: 0,
+            transferId: 0,
             ids: [hash('a')],
         }));
 
@@ -3111,10 +3063,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 {
                     type: 'ops_req',
                     sessionId: open.sessionId,
-                    windowSeq: open.windowSeq,
-                    round: offer.round,
-                    requestId: 0,
-                    offerId: offer.offerId,
+                    transferId: offer.transferId,
                     ids: [operation.signature!.hash],
                 },
             ));
@@ -3197,10 +3146,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             {
                 type: 'ops_req',
                 sessionId: open.sessionId,
-                windowSeq: open.windowSeq,
-                round: offer.round,
-                requestId: 0,
-                offerId: offer.offerId,
+                transferId: offer.transferId,
                 ids: [operation.signature!.hash],
             },
         ));
@@ -3283,7 +3229,7 @@ describe('hyperswarm mediator protocol characterization', () => {
                 offset += count;
                 await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
                     ...requestedOpsPush(pair, data),
-                    requestId: request.requestId,
+                    transferId: request.transferId,
                     page,
                     hasMore: ((page + 1) * 300) < requested.length,
                 }));
@@ -3773,7 +3719,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'ops_ack',
             page: 0,
-            deferred: true,
+            incomplete: true,
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
@@ -3928,7 +3874,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'ops_ack',
-            deferred: true,
+            incomplete: true,
         }));
         expect(decodeWrites(pair)).toContainEqual(expect.objectContaining({
             type: 'neg_close', continuation: null,
@@ -4567,10 +4513,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             encodeFramedMessage(JSON.stringify({
                 type: 'ops_req',
                 sessionId: open.sessionId,
-                windowSeq: open.windowSeq,
-                round: offer.round,
-                requestId: 0,
-                offerId: offer.offerId,
+                transferId: offer.transferId,
                 ids: [operation.signature!.hash],
             })),
         ));
@@ -5142,18 +5085,14 @@ describe('hyperswarm mediator protocol characterization', () => {
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_req',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: 1,
-            requestId: 0,
+            transferId: 0,
             ids: [operation.signature!.hash],
         }));
         const push = decodeWrites(pair).find(message => message.type === 'ops_push')!;
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
             type: 'ops_ack',
             sessionId: open.sessionId,
-            windowSeq: open.windowSeq,
-            round: 1,
-            requestId: 0,
+            transferId: 0,
             page: push.page,
         }));
 

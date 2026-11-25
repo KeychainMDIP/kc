@@ -66,42 +66,33 @@ export interface NegCloseMessage extends HyperMessageBase {
 export interface OpsReqMessage extends HyperMessageBase {
     type: 'ops_req';
     sessionId: string;
-    windowSeq: number;
-    round: number;
-    requestId: number;
-    offerId?: number;
+    transferId: number;
     ids: string[];
-    deferred?: boolean;
+    incomplete?: true;
 }
 
 export interface OpsOfferMessage extends HyperMessageBase {
     type: 'ops_offer';
     sessionId: string;
-    windowSeq: number;
-    round: number;
-    offerId: number;
+    transferId: number;
     ids: string[];
 }
 
 export interface OpsPushMessage extends HyperMessageBase {
     type: 'ops_push';
     sessionId: string;
-    windowSeq: number;
-    round: number;
-    requestId: number;
+    transferId: number;
     page: number;
     hasMore: boolean;
-    data: Operation[];
+    operations: Operation[];
 }
 
 export interface OpsAckMessage extends HyperMessageBase {
     type: 'ops_ack';
     sessionId: string;
-    windowSeq: number;
-    round: number;
-    requestId: number;
+    transferId: number;
     page: number;
-    deferred?: boolean;
+    incomplete?: true;
 }
 
 export interface OrderedCatchupReqMessage extends HyperMessageBase {
