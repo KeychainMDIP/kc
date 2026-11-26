@@ -174,6 +174,16 @@ describe('Negentropy coordinator', () => {
             }
             expect(coordinator.getActiveSessionCount()).toBe(0);
 
+            const disconnectedOpen = await startLocal();
+            coordinator.expire();
+            expect(coordinator.getActiveSessionId(peerKey)).toBe(disconnectedOpen.sessionId);
+            coordinator.reset();
+            await coordinator.handleMessage('missing-peer', {
+                ...disconnectedOpen,
+                sessionId: 'missing-connection',
+            });
+            expect(coordinator.hasActiveSession('missing-peer')).toBe(false);
+
             for (const outcome of ['complete', 'round_limit'] as const) {
                 const open = await startLocal();
                 onProtocolViolation.mockClear();
@@ -796,6 +806,16 @@ describe('Negentropy coordinator', () => {
                 { error: callbackError, peer: '2222-2222', reason: 'gatekeeper_reset' },
                 'negentropy session-close callback failed',
             );
+
+            const refreshedOpen = await startLocal();
+            await coordinator.handleIndexRefreshed('gatekeeper-insert', {
+                mode: 'changes', inserted: 1, updated: 0, deleted: 0,
+            } as never);
+            await coordinator.handleIndexRefreshed('gatekeeper-delete', {
+                mode: 'changes', inserted: 0, updated: 0, deleted: 1,
+            } as never);
+            expect(coordinator.getActiveSessionId(peerKey)).toBe(refreshedOpen.sessionId);
+            coordinator.reset();
 
             const refusedResetOpen = await startLocal();
             failedType = 'neg_close';

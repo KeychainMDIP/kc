@@ -186,6 +186,12 @@ describe('hyperswarm protocol validation', () => {
             ...base('ops_req'), sessionId: 1, transferId: 0, ids: [],
         })).toMatchObject({ ok: false });
         expect(validateHyperMessageEnvelope({
+            ...base('ops_req'), sessionId: 's\n', transferId: 0, ids: [],
+        })).toMatchObject({
+            ok: false,
+            reason: 'sessionId must contain printable ASCII characters only',
+        });
+        expect(validateHyperMessageEnvelope({
             ...base('ops_req'), sessionId: 's', transferId: 0, ids: [],
         }).ok).toBe(true);
         for (const value of [
@@ -407,6 +413,13 @@ describe('hyperswarm protocol validation', () => {
             ...base('neg_msg'), sessionId: 's', windowSeq: 0, round: 0,
             frame: Buffer.alloc(MAX_NEGENTROPY_FRAME_BYTES + 1).toString('base64'), continuation: null,
         } as never, limits)).toMatchObject({ ok: false });
+        expect(validateHyperMessagePayload({
+            ...base('neg_msg'), sessionId: 's', windowSeq: 0, round: 0,
+            frame: 'é'.repeat(MAX_NEGENTROPY_FRAME_BYTES), continuation: null,
+        } as never, limits)).toMatchObject({
+            ok: false,
+            reason: `frame exceeds ${MAX_NEGENTROPY_FRAME_BYTES} decoded bytes`,
+        });
         expect(validateHyperMessagePayload({
             ...base('neg_msg'), sessionId: 's', windowSeq: 0, round: 0,
             frame: validFrame,
