@@ -157,7 +157,6 @@ interface PeerSyncSession {
     maxRounds: number;
     reconciliationComplete: boolean;
     receivedPushIds: Set<string>;
-    receivedKnownPushIds: Set<string>;
     provenStoredPushIds: Set<string>;
     receivedPushMaxCursor: SyncStoreCursor | null;
     sentPushMaxCursor: SyncStoreCursor | null;
@@ -303,7 +302,6 @@ function createSessionState(
         maxRounds,
         reconciliationComplete: false,
         receivedPushIds: new Set<string>(),
-        receivedKnownPushIds: new Set<string>(),
         provenStoredPushIds: new Set<string>(),
         receivedPushMaxCursor: null,
         sentPushMaxCursor: null,
@@ -681,7 +679,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         session.pendingNeedIds = new Set<string>();
         session.reconciliationComplete = false;
         session.receivedPushIds = new Set<string>();
-        session.receivedKnownPushIds = new Set<string>();
         session.provenStoredPushIds.clear();
         session.receivedPushMaxCursor = null;
         session.sentPushMaxCursor = null;
@@ -1018,7 +1015,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         remoteCappedByRecords: boolean;
         remoteLastCursor: SyncStoreCursor | null;
         receivedPushCount: number;
-        receivedKnownPushCount: number;
         receivedPushMaxCursor: SyncStoreCursor | null;
         chosenCursor: SyncStoreCursor | null;
         blockedByAfter: boolean;
@@ -1032,7 +1028,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 remoteCappedByRecords: false,
                 remoteLastCursor: null,
                 receivedPushCount: 0,
-                receivedKnownPushCount: 0,
                 receivedPushMaxCursor: null,
                 chosenCursor: null,
                 blockedByAfter: false,
@@ -1046,7 +1041,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             && session.remoteContinuation !== null;
         const remoteLastCursor = cloneCursor(session.remoteContinuation);
         const receivedPushCount = session.receivedPushIds.size;
-        const receivedKnownPushCount = session.receivedKnownPushIds.size;
         const receivedPushMaxCursor = cloneCursor(session.receivedPushMaxCursor);
         const decision = getContinuationCursorDecision({
             windowName: window.name,
@@ -1057,7 +1051,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             remoteCappedByRecords,
             remoteLastCursor,
             receivedPushCount,
-            receivedKnownPushCount,
             receivedPushMaxCursor,
         });
 
@@ -1068,7 +1061,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             remoteCappedByRecords,
             remoteLastCursor,
             receivedPushCount,
-            receivedKnownPushCount,
             receivedPushMaxCursor,
             chosenCursor: decision.chosenCursor,
             blockedByAfter: decision.blockedByAfter,
@@ -1148,22 +1140,19 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
             return true;
         }
 
-        const cursor = getSessionContinuationDecision(session).chosenCursor;
+        const decision = getSessionContinuationDecision(session);
+        const cursor = decision.chosenCursor;
         if (cursor) {
             const continuation = buildNextHistoryPage(currentWindow, cursor, getNextWindowOrder(session));
             if (sameWindow(continuation, candidate)) {
                 return true;
             }
         }
-        const completeServedPage = session.sentPushCount >= currentWindow.maxRecords;
-        // Each peer can choose a different continuation when one side already had an offered
-        // operation. In a capped window, accept the cursor this node demonstrably served even
-        // when that asymmetric transfer contained fewer than a complete page.
-        const asymmetricCappedPage = session.currentWindowStats?.cappedByRecords === true
-            && session.remoteContinuation !== undefined
-            && session.remoteContinuation !== null;
-        if ((!completeServedPage && !asymmetricCappedPage)
-            || !session.sentPushMaxCursor
+        if (decision.localCappedByRecords || decision.remoteCappedByRecords) {
+            return false;
+        }
+        const completeServedWindow = session.sentPushCount >= currentWindow.maxRecords;
+        if (!completeServedWindow || !session.sentPushMaxCursor
             || (currentWindow.after && compareSyncCursor(session.sentPushMaxCursor, currentWindow.after) <= 0)) {
             return false;
         }
@@ -2357,9 +2346,6 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     closePeerSession(peerKey, 'unresolved_limit_exceeded');
                     return;
                 }
-            }
-            for (const id of imported.knownIds) {
-                session.receivedKnownPushIds.add(id);
             }
             for (const id of [...imported.knownIds, ...imported.persistedIds]) {
                 session.provenStoredPushIds.add(id);

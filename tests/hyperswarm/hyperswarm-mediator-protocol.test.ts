@@ -5059,10 +5059,24 @@ describe('hyperswarm mediator protocol characterization', () => {
         )).toBeNull();
     });
 
-    it('rejects a continuation after serving less than a complete history window', async () => {
+    it.each([
+        ['rejects a served-operation continuation below the uncapped window record limit', 16, true],
+        ['accepts a served-operation continuation at the uncapped window record limit', 1, false],
+    ])('%s', async (
+        _case,
+        maxRecords,
+        rejected,
+    ) => {
         const [operation] = await makeOperations(1);
-        const open = await createRemoteOpen();
-        const protocolNode = await createNode({ keyByte: 0x33 });
+        const remoteOpen = await createRemoteOpen();
+        const open: Record<string, unknown> = {
+            ...remoteOpen,
+            window: {
+                ...(remoteOpen.window as Record<string, unknown>),
+                limit: maxRecords,
+            },
+        };
+        const protocolNode = await createNode({ keyByte: 0x33, maxRecords });
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
             ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
@@ -5109,6 +5123,104 @@ describe('hyperswarm mediator protocol characterization', () => {
             round: 1,
             window: wireWindow(continuationWindow),
             previousContinuation: null,
+        }));
+
+        expect(pair.connectionA.destroyed).toBe(rejected);
+        const connectionState = protocolNode.node.run(
+            () => protocolNode.node.mediator.__test.getConnectionState(peerKey),
+        );
+        if (rejected) {
+            expect(connectionState).toBeNull();
+        }
+        else {
+            expect(connectionState?.activeSession).toEqual({
+                mode: 'negentropy',
+                sessionId: open.sessionId,
+            });
+        }
+    });
+
+    it.each([
+        ['fewer than the window record limit', 1],
+        ['the complete window record limit', 2],
+    ])('rejects a later capped continuation authorized only by %s', async (_case, requestCount) => {
+        const [operationA, operationB, , operationD, operationE] = await makeOperations(5);
+        const remoteCursor = {
+            ts: Math.floor(Date.parse(operationB.signature!.signed) / 1000),
+            id: operationB.signature!.hash,
+        };
+        const requested = [operationD, operationE].slice(0, requestCount);
+        const requestedCursor = {
+            ts: Math.floor(Date.parse(requested.at(-1)!.signature!.signed) / 1000),
+            id: requested.at(-1)!.signature!.hash,
+        };
+        const remoteOpen = await createRemoteOpen();
+        const open: Record<string, unknown> = {
+            ...remoteOpen,
+            window: {
+                ...(remoteOpen.window as Record<string, unknown>),
+                limit: 2,
+            },
+        };
+        const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 2 });
+        await protocolNode.store.upsertMany([operationA, operationD, operationE].map(operation => ({
+            id: operation.signature!.hash,
+            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            operation,
+        })));
+        const { peerKey, pair } = attachPeer(protocolNode, {});
+        const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
+        jest.spyOn(protocolNode.adapter, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createEngine(snapshot);
+            jest.spyOn(engine, 'reconcile')
+                .mockResolvedValueOnce({
+                    nextMsg: nativeFrame('continue'),
+                    haveIds: [],
+                    needIds: [],
+                })
+                .mockResolvedValueOnce({
+                    nextMsg: null,
+                    haveIds: [],
+                    needIds: [],
+                });
+            return engine;
+        });
+
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, open));
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_req',
+            sessionId: open.sessionId,
+            transferId: 0,
+            ids: requested.map(operation => operation.signature!.hash),
+        }));
+        const push = decodeWrites(pair).find(message => message.type === 'ops_push')!;
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'ops_ack',
+            sessionId: open.sessionId,
+            transferId: 0,
+            page: push.page,
+        }));
+        const response = decodeWrites(pair).find(message => message.type === 'neg_msg')!;
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            type: 'neg_msg',
+            sessionId: open.sessionId,
+            windowSeq: open.windowSeq,
+            round: response.round,
+            frame: encodeNegentropyFrame(nativeFrame('complete-window')),
+            continuation: remoteCursor,
+        }));
+
+        const continuationWindow = buildNextHistoryPage(
+            reconciliationWindow(open),
+            requestedCursor,
+            1,
+        );
+        await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
+            ...open,
+            windowSeq: continuationWindow.order,
+            round: Number(response.round) + 1,
+            window: wireWindow(continuationWindow),
+            previousContinuation: remoteCursor,
         }));
 
         expect(pair.connectionA.destroyed).toBe(true);

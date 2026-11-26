@@ -66,9 +66,11 @@ type ScenarioName =
     | 'identical'
     | 'partial overlap'
     | 'fully disjoint'
+    | 'disjoint exact limit'
     | 'interleaved capped pages'
     | 'same-second exact cap'
     | 'same-second cap-plus-one'
+    | 'known capped overlap'
     | 'local-only continuation cursor'
     | 'peer-only older history'
     | 'future timestamp pages';
@@ -563,6 +565,20 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
         const operations = await createIndependentOperations([baseTime, baseTime + 1_000, baseTime + 2_000, baseTime + 3_000]);
         return { operationsA: operations.slice(0, 2), operationsB: operations.slice(2), maxRecordsPerWindow: 8, expectContinuation: false };
     }
+    if (name === 'disjoint exact limit') {
+        const operations = await createIndependentOperations([
+            baseTime,
+            baseTime + 1_000,
+            baseTime + 2_000,
+            baseTime + 3_000,
+        ]);
+        return {
+            operationsA: [operations[0], operations[2]],
+            operationsB: [operations[1], operations[3]],
+            maxRecordsPerWindow: 2,
+            expectContinuation: true,
+        };
+    }
     if (name === 'interleaved capped pages') {
         const operations = await createIndependentOperations(Array.from({ length: 16 }, (_value, index) => baseTime + (index * 1_000)));
         return {
@@ -588,6 +604,19 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
             maxRecordsPerWindow: 4,
             expectContinuation: true,
             knownOutsideId: operationCursor(operations[4]).id,
+        };
+    }
+    if (name === 'known capped overlap') {
+        const operations = await createIndependentOperations(Array.from(
+            { length: 5 },
+            (_value, index) => baseTime + (index * 1_000),
+        ));
+        return {
+            operationsA: operations.slice(0, 4),
+            operationsB: [operations[0], operations[3], operations[4]],
+            maxRecordsPerWindow: 2,
+            expectContinuation: true,
+            knownOutsideId: operationCursor(operations[3]).id,
         };
     }
     if (name === 'local-only continuation cursor') {
@@ -923,9 +952,11 @@ describe('hyperswarm mediator behavior', () => {
             'identical',
             'partial overlap',
             'fully disjoint',
+            'disjoint exact limit',
             'interleaved capped pages',
             'same-second exact cap',
             'same-second cap-plus-one',
+            'known capped overlap',
             'local-only continuation cursor',
             'peer-only older history',
             'future timestamp pages',

@@ -37,16 +37,6 @@ function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCurs
         : cloneCursor(b)!;
 }
 
-function maxCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {
-    if (!a) {
-        return cloneCursor(b)!;
-    }
-
-    return compareSyncCursor(a, b) >= 0
-        ? cloneCursor(a)!
-        : cloneCursor(b)!;
-}
-
 export interface ContinuationCursorDecisionInput {
     windowName: string;
     windowAfter: SyncStoreCursor | null;
@@ -56,7 +46,6 @@ export interface ContinuationCursorDecisionInput {
     remoteCappedByRecords: boolean;
     remoteLastCursor: SyncStoreCursor | null;
     receivedPushCount: number;
-    receivedKnownPushCount: number;
     receivedPushMaxCursor: SyncStoreCursor | null;
 }
 
@@ -67,17 +56,13 @@ export interface ContinuationCursorDecision {
 
 export function getContinuationCursorDecision(input: ContinuationCursorDecisionInput): ContinuationCursorDecision {
     let cursor: SyncStoreCursor | null = null;
-    const allReceivedPushesAlreadyKnown = input.receivedPushCount > 0
-        && input.receivedKnownPushCount === input.receivedPushCount;
 
     if (input.localCappedByRecords && input.localLastCursor) {
         cursor = cloneCursor(input.localLastCursor);
     }
 
     if (input.remoteCappedByRecords && input.remoteLastCursor) {
-        cursor = allReceivedPushesAlreadyKnown
-            ? maxCursor(cursor, input.remoteLastCursor)
-            : minCursor(cursor, input.remoteLastCursor);
+        cursor = minCursor(cursor, input.remoteLastCursor);
     }
 
     if (!cursor && input.windowName === 'history_paged' && input.receivedPushCount >= input.windowMaxRecords) {
