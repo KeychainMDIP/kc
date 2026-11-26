@@ -54,14 +54,26 @@ describe('hyperswarm protocol validation', () => {
             ...base('queue'),
             operations: [value],
         } as QueueMessage;
+        const pageBytes = Buffer.byteLength(JSON.stringify(message.operations), 'utf8');
         const validated = validateQueueMessagePayload(message, limits);
 
         expect(validated).toEqual({
             ok: true,
             value: {
                 operations: message.operations,
-                bytes: Buffer.byteLength(JSON.stringify([value]), 'utf8'),
+                bytes: pageBytes,
             },
+        });
+        expect(validateQueueMessagePayload(message, {
+            ...limits,
+            maxBytesPerPush: pageBytes,
+        })).toMatchObject({ ok: true });
+        expect(validateQueueMessagePayload(message, {
+            ...limits,
+            maxBytesPerPush: pageBytes - 1,
+        })).toEqual({
+            ok: false,
+            reason: `operation page exceeds ${pageBytes - 1} bytes`,
         });
         expect(validateQueueMessagePayload({
             ...message,

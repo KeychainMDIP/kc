@@ -119,10 +119,13 @@ envelope does not prove a submitted native confirmation was rejected.
 ### Client
 
 `getQueue(registry)` returns the current publication-queue head page, not the
-complete queue. A page contains at most 300 operations and 512 KiB of operation
-JSON. Pass `{ limit, maxBytes }` to request a smaller page, clear the returned
-operations after successful publication, then read again to obtain the next
-page. Re-reading before clearing returns the same head page.
+complete queue. A non-empty page contains at most 300 operations, and the exact
+UTF-8 byte length of its serialized JSON array is at most 512 KiB, including
+brackets and commas. Pass `{ limit, maxBytes }` to request a smaller page,
+clear the returned operations after successful publication, then read again to
+obtain the next page. Re-reading before clearing returns the same head page. An
+empty queue returns `[]` even when `maxBytes` is less than two because no
+operation page is published.
 
 Incremental `exportIndex()` requests include changed DID histories by default.
 Set `includeDIDHistories: false` in changes mode to skip those history reads and

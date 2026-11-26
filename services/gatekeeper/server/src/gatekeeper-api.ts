@@ -1636,7 +1636,9 @@ v1router.post('/batch/import', trackedRoute(async (req, res) => {
  *           minimum: 1
  *           maximum: 524288
  *           default: 524288
- *         description: Maximum combined UTF-8 JSON bytes of operations in the head page.
+ *         description: >
+ *           Maximum exact UTF-8 byte length of a non-empty serialized operation
+ *           array, including brackets and commas. An empty queue still returns [].
  *
  *     responses:
  *       200:

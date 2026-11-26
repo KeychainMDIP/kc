@@ -2155,20 +2155,21 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         const queue = await this.db.getQueue(registry, limit);
         const page: Operation[] = [];
-        let bytes = 0;
+        let bytes = 2;
         for (const operation of queue) {
             if (page.length >= limit) break;
             const operationBytes = Buffer.byteLength(JSON.stringify(operation), 'utf8');
-            if (operationBytes > maxBytes && page.length === 0) {
+            const pageBytes = bytes + operationBytes + (page.length > 0 ? 1 : 0);
+            if (pageBytes > maxBytes && page.length === 0) {
                 const error = new Error(QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT) as Error & { code: string };
                 error.code = QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT;
                 throw error;
             }
-            if (bytes + operationBytes > maxBytes) {
+            if (pageBytes > maxBytes) {
                 break;
             }
             page.push(operation);
-            bytes += operationBytes;
+            bytes = pageBytes;
         }
         return page;
     }

@@ -120,10 +120,12 @@ operation can have different outcomes in other envelopes.
 ## Queues and custom headers
 
 `getQueue(registry)` returns one bounded queue head page, containing at most
-300 operations and 512 KiB of operation JSON. Use
+300 operations. For a non-empty page, the exact UTF-8 byte length of the
+serialized JSON array is at most 512 KiB, including brackets and commas. Use
 `getQueue(registry, limit, maxBytes)` to request a smaller page. Clear the
 returned operations after successful publication, then call `getQueue()` again
-for the next page.
+for the next page. An empty queue returns `[]` even when `maxBytes` is less than
+two because no operation page is published.
 
 `clearQueue()` accepts either a list of operations or a list of their signature
 hash strings. Registry values are encoded as individual path segments.

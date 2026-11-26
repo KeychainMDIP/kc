@@ -147,7 +147,7 @@ describe('getQueue', () => {
     it('should return empty list when no events in queue', async () => {
         const registry = 'TFTC';
 
-        const queue = await gatekeeper.getQueue(registry);
+        const queue = await gatekeeper.getQueue(registry, { maxBytes: 1 });
 
         expect(queue).toStrictEqual([]);
     });
@@ -199,9 +199,21 @@ describe('getQueue', () => {
 
         await expect(gatekeeper.getQueue('TFTC', { limit: 2 }))
             .resolves.toStrictEqual([first, second]);
+
+        const firstPageBytes = Buffer.byteLength(JSON.stringify([first]), 'utf8');
         await expect(gatekeeper.getQueue('TFTC', {
-            maxBytes: Buffer.byteLength(JSON.stringify(first), 'utf8'),
+            maxBytes: firstPageBytes,
         })).resolves.toStrictEqual([first]);
+        await expect(gatekeeper.getQueue('TFTC', {
+            maxBytes: firstPageBytes - 1,
+        })).rejects.toMatchObject({ code: QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT });
+
+        const secondPageBytes = Buffer.byteLength(JSON.stringify([first, second]), 'utf8');
+        const twoOperations = await gatekeeper.getQueue('TFTC', { maxBytes: secondPageBytes });
+        expect(twoOperations).toStrictEqual([first, second]);
+        expect(Buffer.byteLength(JSON.stringify(twoOperations), 'utf8')).toBe(secondPageBytes);
+        await expect(gatekeeper.getQueue('TFTC', { maxBytes: secondPageBytes - 1 }))
+            .resolves.toStrictEqual([first]);
     });
 
     it('applies the default byte limit', async () => {
@@ -210,7 +222,10 @@ describe('getQueue', () => {
         await db.queueOperation('TFTC', first);
         await db.queueOperation('TFTC', second);
 
-        await expect(gatekeeper.getQueue('TFTC')).resolves.toStrictEqual([first]);
+        const page = await gatekeeper.getQueue('TFTC');
+        expect(page).toStrictEqual([first]);
+        expect(Buffer.byteLength(JSON.stringify(page), 'utf8')).toBeLessThanOrEqual(MAX_OPERATION_PAGE_BYTES);
+        expect(Buffer.byteLength(JSON.stringify([first, second]), 'utf8')).toBeGreaterThan(MAX_OPERATION_PAGE_BYTES);
     });
 
     it.each([

@@ -133,9 +133,12 @@ for bounded retries. No database reset is required.
 ## Bounded publication queue reads
 
 `GET /api/v1/queue/{registry}` returns the current queue head page rather than
-the complete publication queue. A page contains at most 300 operations and
-512 KiB of operation JSON. Optional `limit` and `maxBytes` query parameters may
-request smaller positive bounds, but cannot raise those server maximums.
+the complete publication queue. A non-empty page contains at most 300
+operations, and the exact UTF-8 byte length of its serialized JSON array is at
+most 512 KiB, including brackets and commas. Optional `limit` and `maxBytes`
+query parameters may request smaller positive bounds, but cannot raise those
+server maximums. An empty queue returns `[]` even when `maxBytes` is less than
+two because no operation page is published.
 
 Clear a successfully published page with
 `POST /api/v1/queue/{registry}/clear`, then read again for the next page.
