@@ -831,6 +831,136 @@ describe('Negentropy coordinator', () => {
             }));
             expect(coordinator.getActiveSessionCount()).toBe(0);
             failedType = null;
+
+            const buildSnapshotForWindow = adapter.buildSnapshotForWindow.bind(adapter);
+            const continuationCursor = {
+                ts: 1_767_225_600,
+                id: operation.signature.hash,
+            };
+            let nextBuildBarrier: {
+                markStarted(): void;
+                blocked: Promise<void>;
+            } | null = null;
+            const blockNextBuild = () => {
+                let markStarted!: () => void;
+                const started = new Promise<void>(resolve => {
+                    markStarted = resolve;
+                });
+                let release!: () => void;
+                const blocked = new Promise<void>(resolve => {
+                    release = resolve;
+                });
+                nextBuildBarrier = { markStarted, blocked };
+                return { started, release };
+            };
+            adapter.buildSnapshotForWindow = jest.fn(async (window: ReconciliationWindow) => {
+                const barrier = nextBuildBarrier;
+                if (barrier) {
+                    nextBuildBarrier = null;
+                    barrier.markStarted();
+                    await barrier.blocked;
+                }
+                const snapshot = await buildSnapshotForWindow(window);
+                return {
+                    ...snapshot,
+                    stats: {
+                        ...snapshot.stats,
+                        cappedByRecords: true,
+                        lastCursor: continuationCursor,
+                    },
+                };
+            });
+            const pendingResetTemplate = await startLocal();
+            coordinator.reset();
+            const pendingResetResponse = await openRemote(
+                pendingResetTemplate,
+                'remote-reset-during-continuation',
+            );
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [] });
+            await coordinator.handleMessage(peerKey, {
+                type: 'neg_msg',
+                continuation: null,
+                sessionId: 'remote-reset-during-continuation',
+                windowSeq: pendingResetTemplate.windowSeq,
+                round: pendingResetResponse.round!,
+                frame: 'AA==',
+            });
+            const responderBuild = blockNextBuild();
+            let pendingResponderContinuation: Promise<void> | null = null;
+            const pendingResponderResetStart = sent.length;
+            try {
+                pendingResponderContinuation = coordinator.handleMessage(peerKey, {
+                    ...pendingResetTemplate,
+                    sessionId: 'remote-reset-during-continuation',
+                    windowSeq: pendingResetTemplate.windowSeq + 1,
+                    round: pendingResetResponse.round! + 1,
+                    window: {
+                        ...pendingResetTemplate.window,
+                        after: continuationCursor,
+                    },
+                    previousContinuation: null,
+                });
+                await responderBuild.started;
+                await coordinator.handleIndexRefreshed('gatekeeper-reset-during-continuation', {
+                    mode: 'snapshot', inserted: 0, updated: 0, deleted: 0,
+                    resetReason: 'gatekeeper_index_epoch_changed',
+                } as never);
+            }
+            finally {
+                responderBuild.release();
+                if (pendingResponderContinuation) {
+                    await pendingResponderContinuation;
+                }
+            }
+            const pendingResponderResetMessages = sent.slice(pendingResponderResetStart);
+            expect(pendingResponderResetMessages).toContainEqual(expect.objectContaining({
+                type: 'neg_close',
+                sessionId: 'remote-reset-during-continuation',
+                windowSeq: pendingResetTemplate.windowSeq + 1,
+                outcome: 'busy',
+            }));
+            expect(pendingResponderResetMessages.filter(message =>
+                message.type === 'neg_msg' || message.type === 'neg_close')).toHaveLength(1);
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+
+            const pendingInitiatorOpen = await startLocal();
+            outcomes.push({ nextMsg: null, haveIds: [], needIds: [] });
+            const initiatorBuild = blockNextBuild();
+            let pendingInitiatorContinuation: Promise<void> | null = null;
+            const pendingInitiatorResetStart = sent.length;
+            try {
+                pendingInitiatorContinuation = coordinator.handleMessage(peerKey, {
+                    type: 'neg_msg',
+                    continuation: null,
+                    sessionId: pendingInitiatorOpen.sessionId,
+                    windowSeq: pendingInitiatorOpen.windowSeq,
+                    round: pendingInitiatorOpen.round + 1,
+                    frame: 'AA==',
+                });
+                await initiatorBuild.started;
+                await coordinator.handleIndexRefreshed('gatekeeper-reset-during-local-continuation', {
+                    mode: 'snapshot', inserted: 0, updated: 0, deleted: 0,
+                    resetReason: 'gatekeeper_index_epoch_changed',
+                } as never);
+            }
+            finally {
+                initiatorBuild.release();
+                adapter.buildSnapshotForWindow = buildSnapshotForWindow;
+                if (pendingInitiatorContinuation) {
+                    await pendingInitiatorContinuation;
+                }
+            }
+            const pendingInitiatorResetMessages = sent.slice(pendingInitiatorResetStart);
+            expect(pendingInitiatorResetMessages).toContainEqual(expect.objectContaining({
+                type: 'neg_close',
+                sessionId: pendingInitiatorOpen.sessionId,
+                windowSeq: pendingInitiatorOpen.windowSeq,
+                outcome: 'busy',
+            }));
+            expect(pendingInitiatorResetMessages.filter(message =>
+                message.type === 'neg_open' || message.type === 'neg_close')).toHaveLength(1);
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+
             await startLocal();
             coordinator.reset();
 

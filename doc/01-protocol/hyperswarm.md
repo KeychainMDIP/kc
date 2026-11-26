@@ -145,14 +145,15 @@ are rejected before import or acknowledgement.
 
 Each session begins with `windowSeq: 0`. A subsequent window increments it by
 one and must use the exact continuation or authorized smaller round-limit split
-from the preceding window. `neg_msg` carries the current continuation. A
-record-capped next `neg_open` repeats it as `previousContinuation` and, when
-non-null, as `window.after`. When either snapshot is record-capped, the
-continuation is the earlier available capped boundary; a cursor from a served
-operation cannot override it. When neither snapshot is capped, serving the
-window's complete record limit may authorize the final served-operation cursor
-so exact-limit exchanges can continue. A terminal successful close carries the
-final continuation.
+from the preceding window. `neg_msg` carries the sender's current snapshot
+continuation. A subsequent `neg_open` repeats that sender-specific value as
+`previousContinuation`. Its `window.after` uses the earlier available capped
+boundary when either snapshot is record-capped, so it can differ from
+`previousContinuation` when the peers' capped boundaries differ. A cursor from
+a served operation cannot override a capped boundary. When neither snapshot is
+capped, serving the window's complete record limit may authorize the final
+served-operation cursor so exact-limit exchanges can continue. A terminal
+successful close carries the sender's final continuation.
 
 `complete` marks the peer synchronized and closes the session. `round_limit`
 authorizes only the exact smaller split; if no split is possible, the session

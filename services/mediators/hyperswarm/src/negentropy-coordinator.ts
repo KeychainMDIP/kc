@@ -2679,7 +2679,12 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         }
         if (reason) {
             for (const [peerKey, session] of peerSessions) {
-                sendNegClose(peerKey, session, reason);
+                // A responder records the peer-visible window before its snapshot build
+                // completes. An initiator exposes it only after the build completes.
+                const windowSeq = !session.initiator && session.currentWindow
+                    ? session.currentWindow.order
+                    : session.windowSeq ?? 0;
+                sendNegClose(peerKey, session, reason, windowSeq);
                 closePeerSession(peerKey, reason);
             }
         }
