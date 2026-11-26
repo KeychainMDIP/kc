@@ -1591,6 +1591,24 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(resetSessionId).toEqual(expect.any(String));
         expect(resetSessionId).not.toBe(firstSessionId);
         expect(countNegOpenMessages(peer)).toBeGreaterThan(initialNegOpenCount);
+
+        const resetWrites = peer.pair.transcript
+            .filter(entry => entry.direction === 'a-to-b'
+                && (entry.messageType === 'neg_close' || entry.messageType === 'neg_open'))
+            .map(entry => ({
+                sequence: entry.sequence,
+                message: JSON.parse(decodeFramedMessages(entry.raw).messages[0].toString('utf8')) as {
+                    type: 'neg_close' | 'neg_open';
+                    sessionId: string;
+                    outcome?: string;
+                },
+            }));
+        const resetClose = resetWrites.find(({ message }) => message.type === 'neg_close'
+            && message.sessionId === firstSessionId);
+        const replacementOpen = resetWrites.find(({ message }) => message.type === 'neg_open'
+            && message.sessionId === resetSessionId);
+        expect(resetClose?.message.outcome).toBe('busy');
+        expect(resetClose?.sequence).toBeLessThan(replacementOpen!.sequence);
     });
 
     it('keeps a pending peer-sync reservation while applying a Gatekeeper reset', async () => {

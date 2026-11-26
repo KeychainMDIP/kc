@@ -2669,7 +2669,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
 
     async function processIndexRefresh(source: string, sync: BootstrapResult): Promise<void> {
         if (sync.resetReason) {
-            reset();
+            reset('gatekeeper_reset');
         }
         else if (sync.inserted > 0 || sync.updated > 0 || sync.deleted > 0) {
             markNegentropyAdapterDirty();

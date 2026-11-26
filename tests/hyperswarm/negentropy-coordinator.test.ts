@@ -774,18 +774,45 @@ describe('Negentropy coordinator', () => {
             importPipeline.filterRetryDelayedIds = originalFilterRetryDelayedIds;
             failedType = null;
 
-            await startLocal();
+            const resetOpen = await startLocal();
             const callbackError = new Error('synchronous close callback failed');
             onSessionClosed.mockImplementationOnce(() => {
                 throw callbackError;
             });
             mockLogger.error.mockClear();
-            coordinator.reset('gatekeeper_reset');
+            const resetMessageStart = sent.length;
+            await coordinator.handleIndexRefreshed('gatekeeper-reset', {
+                mode: 'snapshot', inserted: 0, updated: 0, deleted: 0,
+                resetReason: 'gatekeeper_index_epoch_changed',
+            } as never);
             await Promise.resolve();
+            expect(sent.slice(resetMessageStart)).toContainEqual(expect.objectContaining({
+                type: 'neg_close',
+                sessionId: resetOpen.sessionId,
+                outcome: 'busy',
+            }));
+            expect(coordinator.getActiveSessionCount()).toBe(0);
             expect(mockLogger.error).toHaveBeenCalledWith(
                 { error: callbackError, peer: '2222-2222', reason: 'gatekeeper_reset' },
                 'negentropy session-close callback failed',
             );
+
+            const refusedResetOpen = await startLocal();
+            failedType = 'neg_close';
+            const refusedResetStart = sent.length;
+            await coordinator.handleIndexRefreshed('gatekeeper-reset-refused', {
+                mode: 'snapshot', inserted: 0, updated: 0, deleted: 0,
+                resetReason: 'gatekeeper_index_epoch_changed',
+            } as never);
+            expect(sent.slice(refusedResetStart)).toContainEqual(expect.objectContaining({
+                type: 'neg_close',
+                sessionId: refusedResetOpen.sessionId,
+                outcome: 'busy',
+            }));
+            expect(coordinator.getActiveSessionCount()).toBe(0);
+            failedType = null;
+            await startLocal();
+            coordinator.reset();
 
             const latestTimestamp = jest.spyOn(store, 'getLatestSignedTimestamp');
             latestTimestamp.mockImplementationOnce(async () => {
