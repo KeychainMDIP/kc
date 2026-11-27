@@ -997,10 +997,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 .filter(message => ['ops_push', 'ordered_catchup_push', 'queue'].includes(message.body.type))
                 .flatMap(message => message.body.operations ?? [])).toStrictEqual([]);
 
-            const canonicalA = (await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-                .map(row => ({ ts: row.ts, id: row.id }));
-            const canonicalB = (await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-                .map(row => ({ ts: row.ts, id: row.id }));
+            const canonicalA = await driver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
+            const canonicalB = await driver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
             expect(canonicalA).toStrictEqual(canonicalB);
             await assertSourceOrderMirrored();
         }

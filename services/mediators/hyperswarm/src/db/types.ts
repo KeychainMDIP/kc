@@ -83,7 +83,6 @@ export interface OperationSyncStore {
     saveSyncState(key: string, value: string | null): Promise<void>;
     getByIds(ids: string[]): Promise<SyncOperationRecord[]>;
     iterateSortedKeys(options?: SyncStoreListOptions): Promise<SyncStoreCursor[]>;
-    iterateSorted(options?: SyncStoreListOptions): Promise<SyncOperationRecord[]>;
     iterateOrdered(options?: SyncStoreOrderedListOptions): Promise<SyncOperationRecord[]>;
     has(id: string): Promise<boolean>;
     count(): Promise<number>;

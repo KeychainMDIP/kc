@@ -7142,7 +7142,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         ));
         await eventually(async () => (await protocolNode.store.count()) === 4);
 
-        expect((await protocolNode.store.iterateSorted({ limit: 10 })).map(row => row.id).sort()).toStrictEqual(
+        expect((await protocolNode.store.iterateSortedKeys({ limit: 10 })).map(row => row.id).sort()).toStrictEqual(
             [controller, asset, update, deletion].map(operation => operation.signature!.hash).sort(),
         );
     });

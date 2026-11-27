@@ -111,7 +111,8 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     const byIds = await store.getByIds([recC.id, recA.id, h('d')]);
     expect(byIds.map(item => item.id)).toStrictEqual([recC.id, recA.id]);
 
-    const sortedAll = await store.iterateSorted();
+    const sortedKeys = await store.iterateSortedKeys();
+    const sortedAll = await store.getByIds(sortedKeys.map(item => item.id));
     expect(sortedAll.map(item => item.id)).toStrictEqual([recA.id, recB.id, recC.id]);
     expect(sortedAll.map(item => item.signedTs)).toStrictEqual([1000, 2000, 2000]);
     expect(sortedAll.map(item => item.ts)).toStrictEqual([1000, 2000, 2000]);
@@ -119,7 +120,7 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(sortedAll.find(item => item.id === recA.id)?.syncOrder).toBe(5);
     expect(sortedAll.find(item => item.id === recC.id)?.syncOrder).toBe(10);
 
-    expect(await store.iterateSortedKeys()).toStrictEqual([
+    expect(sortedKeys).toStrictEqual([
         { id: recA.id, ts: 1000 },
         { id: recB.id, ts: 2000 },
         { id: recC.id, ts: 2000 },
@@ -143,25 +144,6 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
         { id: recB.id, ts: 2000 },
         { id: recC.id, ts: 2000 },
     ]);
-
-    const firstTwo = await store.iterateSorted({ limit: 2 });
-    expect(firstTwo.map(item => item.id)).toStrictEqual([recA.id, recB.id]);
-
-    const rangeTs = await store.iterateSorted({ fromTs: 1500, toTs: 2000 });
-    expect(rangeTs.map(item => item.id)).toStrictEqual([recB.id, recC.id]);
-
-    const afterA = await store.iterateSorted({ after: { ts: 1000, id: recA.id } });
-    expect(afterA.map(item => item.id)).toStrictEqual([recB.id, recC.id]);
-
-    const afterB = await store.iterateSorted({ after: { ts: 2000, id: recB.id } });
-    expect(afterB.map(item => item.id)).toStrictEqual([recC.id]);
-
-    const afterRange = await store.iterateSorted({
-        after: { ts: 1500, id: h('0') },
-        fromTs: 1500,
-        toTs: 2000,
-    });
-    expect(afterRange.map(item => item.id)).toStrictEqual([recB.id, recC.id]);
 
     await store.reset();
     await store.upsertMany([
@@ -208,7 +190,7 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
 
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(2);
     expect(await store.deleteBySyncOrder(Number.MAX_SAFE_INTEGER)).toBe(0);
-    expect((await store.iterateSorted()).map(item => item.id)).toStrictEqual([recA.id]);
+    expect((await store.iterateSortedKeys()).map(item => item.id)).toStrictEqual([recA.id]);
     expect(await store.getLatestSignedTimestamp()).toBe(1000);
 
     await store.reset();
@@ -305,7 +287,6 @@ describe('SqliteOperationSyncStore', () => {
         await expect(store.saveSyncState('cursor', '1')).rejects.toThrow('Call start() first');
         await expect(store.getByIds([recA.id])).rejects.toThrow('Call start() first');
         await expect(store.iterateSortedKeys()).rejects.toThrow('Call start() first');
-        await expect(store.iterateSorted()).rejects.toThrow('Call start() first');
         await expect(store.iterateOrdered()).rejects.toThrow('Call start() first');
         await expect(store.has(recA.id)).rejects.toThrow('Call start() first');
         await expect(store.count()).rejects.toThrow('Call start() first');

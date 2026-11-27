@@ -512,10 +512,8 @@ async function assertConverged(
     const historyA = uniqueOperations((await currentDriver.nodeA.gatekeeper.exportBatch()).map(event => event.operation));
     const historyB = uniqueOperations((await currentDriver.nodeB.gatekeeper.exportBatch()).map(event => event.operation));
     const expectedCursors = expectedHistory.map(operationCursor).sort(compareSyncCursor);
-    const cursorsA = (await currentDriver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-        .map(row => ({ ts: row.ts, id: row.id }));
-    const cursorsB = (await currentDriver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-        .map(row => ({ ts: row.ts, id: row.id }));
+    const cursorsA = await currentDriver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
+    const cursorsB = await currentDriver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
 
     expect(operationIds(historyA)).toStrictEqual(expectedIds);
     expect(operationIds(historyB)).toStrictEqual(expectedIds);
@@ -785,9 +783,9 @@ describe('hyperswarm mediator behavior', () => {
 
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(idsB);
-        expect((await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        expect((await driver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }))
             .map(row => row.id).sort()).toStrictEqual(unionIds);
-        expect((await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        expect((await driver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }))
             .map(row => row.id).sort()).toStrictEqual(unionIds);
         expect(await driver.storeA.countOrdered()).toBe(unionIds.length);
         expect(await driver.storeB.countOrdered()).toBe(unionIds.length);

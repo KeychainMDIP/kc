@@ -140,34 +140,6 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
         return out;
     }
 
-    async iterateSorted(options: SyncStoreListOptions = {}): Promise<SyncOperationRecord[]> {
-        const limit = options.limit ?? 1000;
-        const after = options.after;
-        const fromTs = options.fromTs;
-        const toTs = options.toTs;
-
-        const sorted = Array.from(this.records.values()).sort((a, b) => {
-            if (a.ts !== b.ts) {
-                return a.ts - b.ts;
-            }
-            return a.id.localeCompare(b.id);
-        });
-
-        const filtered = sorted.filter(item => {
-            if (after && !(item.ts > after.ts || (item.ts === after.ts && item.id > after.id))) {
-                return false;
-            }
-
-            if (typeof fromTs === 'number' && item.ts < fromTs) {
-                return false;
-            }
-
-            return !(typeof toTs === 'number' && item.ts > toTs);
-        });
-
-        return filtered.slice(0, limit);
-    }
-
     async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
         const limit = options.limit ?? 1000;
         const rows = Array.from(this.records.values(), ({ id, ts }) => ({ id, ts }))

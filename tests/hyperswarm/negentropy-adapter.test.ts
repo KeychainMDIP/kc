@@ -113,7 +113,7 @@ describe('NegentropyAdapter', () => {
             keyReads += 1;
             return iterateSortedKeys(options);
         };
-        store.iterateSorted = async () => {
+        store.getByIds = async () => {
             throw new Error('full records must not be loaded');
         };
 
@@ -294,12 +294,6 @@ describe('NegentropyAdapter', () => {
                 }
                 return rows.map(({ id, ts }) => ({ id, ts }));
             },
-            iterateSorted: async (options: SyncStoreListOptions = {}) => {
-                if (options.after) {
-                    return [];
-                }
-                return rows;
-            },
             iterateOrdered: async () => [],
         };
 
@@ -457,12 +451,6 @@ describe('NegentropyAdapter', () => {
                     return [];
                 }
                 return rows.map(({ id, ts }) => ({ id, ts }));
-            },
-            async iterateSorted(options: SyncStoreListOptions = {}) {
-                if (options.after) {
-                    return [];
-                }
-                return rows;
             },
             async iterateOrdered() { return []; },
         };

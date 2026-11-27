@@ -384,13 +384,11 @@ function trackNodeWork(
     store: InMemoryOperationSyncStore,
     tracker: CallTracker,
 ): NodeWork {
-    const readSorted = store.iterateSorted.bind(store);
     const readOrdered = store.iterateOrdered.bind(store);
     const readCount = store.count.bind(store);
     const readOrderedCount = store.countOrdered.bind(store);
     const upsertMany = store.upsertMany.bind(store);
     const iterateSortedKeys = store.iterateSortedKeys.bind(store);
-    const iterateSorted = store.iterateSorted.bind(store);
     const iterateOrdered = store.iterateOrdered.bind(store);
     const getByIds = store.getByIds.bind(store);
     const count = store.count.bind(store);
@@ -403,7 +401,6 @@ function trackNodeWork(
 
     jest.spyOn(store, 'upsertMany').mockImplementation(tracker.wrap(`${nodeId}.syncStore.upsertMany`, upsertMany));
     jest.spyOn(store, 'iterateSortedKeys').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSortedKeys`, iterateSortedKeys));
-    jest.spyOn(store, 'iterateSorted').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSorted`, iterateSorted));
     jest.spyOn(store, 'iterateOrdered').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateOrdered`, iterateOrdered));
     jest.spyOn(store, 'getByIds').mockImplementation(tracker.wrap(`${nodeId}.syncStore.getByIds`, getByIds));
     jest.spyOn(store, 'count').mockImplementation(tracker.wrap(`${nodeId}.syncStore.count`, count));
@@ -416,13 +413,14 @@ function trackNodeWork(
 
     return {
         async readSummary(): Promise<NodeSummary> {
-            const [events, rows, orderedRows, countValue, orderedCountValue] = await Promise.all([
+            const [events, sortedKeys, orderedRows, countValue, orderedCountValue] = await Promise.all([
                 node.gatekeeper.exportBatch(),
-                readSorted({ limit: Number.MAX_SAFE_INTEGER }),
+                iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }),
                 readOrdered({ limit: Number.MAX_SAFE_INTEGER }),
                 readCount(),
                 readOrderedCount(),
             ]);
+            const rows = await getByIds(sortedKeys.map(row => row.id));
             const gatekeeperOperations = events.map(event => event.operation);
             const gatekeeperIds = operationIds(gatekeeperOperations);
             const storeIds = normalizeIds(rows.map(row => row.id));
