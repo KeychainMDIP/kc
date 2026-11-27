@@ -1,4 +1,5 @@
 import type { SyncStoreCursor } from '../db/types.js';
+import { cloneCursor } from './windows.js';
 
 export function compareSyncCursor(a: SyncStoreCursor, b: SyncStoreCursor): number {
     if (a.ts !== b.ts) {
@@ -14,17 +15,6 @@ export function compareSyncCursor(a: SyncStoreCursor, b: SyncStoreCursor): numbe
     }
 
     return 0;
-}
-
-function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
-    if (!cursor) {
-        return null;
-    }
-
-    return {
-        ts: cursor.ts,
-        id: cursor.id,
-    };
 }
 
 function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {

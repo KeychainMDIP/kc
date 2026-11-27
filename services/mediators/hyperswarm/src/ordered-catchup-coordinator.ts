@@ -35,6 +35,7 @@ import type {
     OperationPageBudget,
     OperationPageReservation,
 } from './operation-page-budget.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const PREFETCH_BATCHES = 2;
@@ -105,10 +106,6 @@ export interface OrderedCatchupCoordinatorOptions {
     onHandoffDeferred(): void | Promise<void>;
     onFailure(outcome: OrderedCatchupOutcome): void | Promise<void>;
     onProtocolViolation(peerKey: string, reason: string, connection: ConnectionInfo): void;
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 export function createOrderedCatchupCoordinator(

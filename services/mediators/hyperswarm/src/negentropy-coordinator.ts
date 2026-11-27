@@ -72,6 +72,7 @@ import type {
 import type { MediatorSyncStats } from './sync-stats.js';
 import type { BulkWorkScheduler } from './bulk-work-scheduler.js';
 import type { OperationPageBudget } from './operation-page-budget.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const MAX_UNRESOLVED_OPERATIONS = 1_000;
@@ -233,10 +234,6 @@ class SnapshotContentionError extends Error {
         super('negentropy snapshot remained dirty after rebuild');
         this.name = 'SnapshotContentionError';
     }
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 function summarizeSyncIds(ids: Iterable<string>, maxSample = 10): {
@@ -928,7 +925,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
         if (peerSessions.get(peerKey) !== session) {
             return;
         }
-        initializeSessionWindowState(session, window, windowSeq, cloneWindowStats(snapshot.stats)!);
+        initializeSessionWindowState(session, window, windowSeq, cloneWindowStats(snapshot.stats));
         session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
         const firstFrame = await session.currentWindowEngine.initiate();
         if (peerSessions.get(peerKey) !== session) {
@@ -1996,7 +1993,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                 session,
                 window,
                 msg.windowSeq,
-                cloneWindowStats(snapshot.stats)!,
+                cloneWindowStats(snapshot.stats),
             );
             session.currentWindowEngine = negentropyAdapter.createEngineForSnapshot(snapshot);
             touchPeerSession(peerKey);

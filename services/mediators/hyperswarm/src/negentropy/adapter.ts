@@ -11,6 +11,9 @@ import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
+    cloneCursor,
+    cloneWindow,
+    cloneWindowStats,
 } from './windows.js';
 
 const log = childLogger({ service: 'hyperswarm-negentropy-adapter' });
@@ -105,31 +108,6 @@ export interface NegentropyWindowSessionOptions {
     nowTs?: number;
     nowMs?: number;
     maxRoundsPerSession?: number;
-}
-
-function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
-    if (!cursor) {
-        return null;
-    }
-
-    return {
-        ts: cursor.ts,
-        id: cursor.id,
-    };
-}
-
-function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
-    return {
-        ...window,
-        after: cloneCursor(window.after) ?? undefined,
-    };
-}
-
-function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats {
-    return {
-        ...stats,
-        lastCursor: cloneCursor(stats.lastCursor),
-    };
 }
 
 export class NegentropyWindowEngine {

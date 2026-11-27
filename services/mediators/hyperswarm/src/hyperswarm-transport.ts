@@ -28,6 +28,7 @@ import {
 } from './protocol-validation.js';
 import type { ValidatedOperationPage } from './negentropy/transfer.js';
 import { MAX_APPLICATION_CONNECTIONS } from './protocol-limits.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-transport' });
 const DEFAULT_PING_INTERVAL_MS = 10 * 1_000;
@@ -93,10 +94,6 @@ export interface HyperswarmTransportOptions {
     maxInboundBytesTotal?: number;
     maxOutboundBytesPerConnection?: number;
     maxOutboundBytesTotal?: number;
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 export function createHyperswarmTransport(options: HyperswarmTransportOptions) {

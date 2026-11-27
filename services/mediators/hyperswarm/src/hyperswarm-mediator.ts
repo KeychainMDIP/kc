@@ -30,6 +30,7 @@ import { createPeerDirectory } from './peer-directory.js';
 import { createQueueCoordinator } from './queue-coordinator.js';
 import { createBulkWorkScheduler } from './bulk-work-scheduler.js';
 import { createOperationPageBudget } from './operation-page-budget.js';
+import { shortName } from './short-name.js';
 import {
     MAX_APPLICATION_CONNECTIONS,
     MAX_NEGENTROPY_WINDOW_RECORDS,
@@ -374,10 +375,6 @@ async function createSwarm(): Promise<void> {
 
     const shortTopic = shortName(b4a.toString(topic, 'hex'));
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 async function buildPingMessage(): Promise<PingMessage> {

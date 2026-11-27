@@ -16,6 +16,9 @@ export function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | 
     };
 }
 
+export function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats;
+export function cloneWindowStats(stats: null): null;
+export function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null;
 export function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
     return stats
         ? {
@@ -39,7 +42,7 @@ export function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): 
 
     return {
         window: cloneWindow(snapshot.window),
-        stats: cloneWindowStats(snapshot.stats)!,
+        stats: cloneWindowStats(snapshot.stats),
         storage: snapshot.storage,
     };
 }

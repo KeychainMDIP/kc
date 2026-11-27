@@ -28,6 +28,7 @@ import { mapOperationToSyncKey } from './sync-mapping.js';
 import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import type { MediatorSyncStats } from './sync-stats.js';
 import { chunkOperationsForPush, estimateOperationBytes } from './negentropy/transfer.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 const REGISTRY = 'hyperswarm';
@@ -147,10 +148,6 @@ function emptyResult(retryable = false): ImportQueueResult {
         unaddressableOperations: [],
         retryable,
     };
-}
-
-function shortName(value: string): string {
-    return value.slice(0, 4) + '-' + value.slice(-4);
 }
 
 export function createImportPipeline(options: ImportPipelineOptions): ImportPipeline {

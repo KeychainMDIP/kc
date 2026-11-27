@@ -29,6 +29,7 @@ import type {
     NegCloseOutcome,
     PingMessage,
 } from './protocol-messages.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 
@@ -49,10 +50,6 @@ interface PeerSyncCoordinatorOptions {
     waitForInitialPing(peerKey: string, connection: ConnectionInfo): Promise<boolean>;
     onPeersAdvertised(dids: string[]): void;
     onIndexReset?(): void;
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
 }
 
 export function createPeerSyncCoordinator(options: PeerSyncCoordinatorOptions) {
