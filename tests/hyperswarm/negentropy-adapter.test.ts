@@ -1,7 +1,7 @@
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
-import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import { Operation } from '@mdip/gatekeeper/types';
 import type { OperationSyncStore, SyncStoreCursor, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import { jest } from '@jest/globals';

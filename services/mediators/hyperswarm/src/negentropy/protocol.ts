@@ -1,7 +1,7 @@
 import type { SyncStoreCursor } from '../db/types.js';
 import type { ReconciliationWindow } from './adapter.js';
-import { MDIP_EPOCH_SECONDS } from './windows.js';
 import { MAX_NEGENTROPY_WINDOW_RECORDS } from '../protocol-limits.js';
+import { MDIP_EPOCH_SECONDS } from '../sync-mapping.js';
 
 export const NEG_SYNC_ID_RE = /^[a-f0-9]{64}$/;
 

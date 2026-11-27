@@ -4,8 +4,10 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
-import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
-import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
+import {
+    mapOperationToSyncKey,
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
     decodeFramedMessages,
     encodeFramedMessage,

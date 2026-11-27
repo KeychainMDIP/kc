@@ -52,11 +52,10 @@ import {
     cloneWindowSnapshot,
     cloneWindowStats,
     makeWindowKey,
-    MDIP_EPOCH_SECONDS,
     sameWindow,
     windowLabel,
 } from './negentropy/windows.js';
-import { mapOperationToSyncKey } from './sync-mapping.js';
+import { mapOperationToSyncKey, MDIP_EPOCH_SECONDS } from './sync-mapping.js';
 import type {
     HyperMessage,
     NativeNegentropyFrame,

@@ -2,19 +2,21 @@ import { createRequire } from 'module';
 import { childLogger } from '@mdip/common/logger';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { OperationSyncStore } from '../db/types.js';
-import { MAX_NEGENTROPY_FRAME_BYTES } from '../protocol-limits.js';
+import {
+    MAX_NEGENTROPY_FRAME_BYTES,
+    MAX_NEGENTROPY_WINDOW_RECORDS,
+} from '../protocol-limits.js';
+import { MDIP_EPOCH_SECONDS } from '../sync-mapping.js';
 import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
-    MDIP_EPOCH_SECONDS,
 } from './windows.js';
 
 const log = childLogger({ service: 'hyperswarm-negentropy-adapter' });
 
 const MIN_FRAME_SIZE_LIMIT = 4096;
 const DEFAULT_ITERATE_LIMIT = 1000;
-const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
 const require = createRequire(import.meta.url);
 
@@ -191,7 +193,7 @@ export default class NegentropyAdapter {
         this.syncStore = options.syncStore;
         this.frameSizeLimit = options.frameSizeLimit ?? MAX_NEGENTROPY_FRAME_BYTES;
         this.iterateLimit = options.iterateLimit ?? DEFAULT_ITERATE_LIMIT;
-        this.maxRecordsPerWindow = options.maxRecordsPerWindow ?? DEFAULT_MAX_RECORDS_PER_WINDOW;
+        this.maxRecordsPerWindow = options.maxRecordsPerWindow ?? MAX_NEGENTROPY_WINDOW_RECORDS;
         this.maxRoundsPerSession = options.maxRoundsPerSession ?? DEFAULT_MAX_ROUNDS_PER_SESSION;
         this.mod = loadNegentropyModule();
 

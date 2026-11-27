@@ -2,6 +2,10 @@ import asyncLib from 'async';
 
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type CipherNode from '@mdip/cipher/node';
+import {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+} from '@mdip/gatekeeper';
 import type { EventQueueStatus, Operation } from '@mdip/gatekeeper/types';
 import { generateCID } from '@mdip/ipfs/utils';
 import { childLogger } from '@mdip/common/logger';
@@ -37,8 +41,6 @@ const MAX_RECOVERY_DELAY_MS = 5_000;
 const MAX_RETRY_DELAY_IDS = 25_000;
 const RETRY_DELAY_STATE_PREFIX = 'import.retryDelay.';
 const RETRY_DELAY_STATE_PAGE_LIMIT = 1_000;
-const MAX_RESULT_OPERATIONS = 300;
-const MAX_RESULT_BYTES = 512 * 1024;
 export const TERMINAL_REJECTED_SYNC_ORDER = Number.MAX_SAFE_INTEGER;
 
 type RetryDelay = { kind: 'pending' | 'capacity'; deadline: number };
@@ -682,7 +684,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         function retainResult(operation: Operation, target: Operation[], key: string): void {
             if (resultKeys.has(key)) return;
             const bytes = estimateOperationBytes(operation);
-            if (resultKeys.size >= MAX_RESULT_OPERATIONS || resultBytes + bytes > MAX_RESULT_BYTES) return;
+            if (resultKeys.size >= MAX_OPERATION_PAGE_COUNT || resultBytes + bytes > MAX_OPERATION_PAGE_BYTES) return;
             resultKeys.add(key);
             resultBytes += bytes;
             target.push(operation);
@@ -701,7 +703,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
                 for (const operations of chunkOperationsForPush([
                     ...persisted.acceptedOperations,
                     ...persisted.portableTerminalOperations,
-                ], { maxOpsPerPush: MAX_RESULT_OPERATIONS, maxBytesPerPush: MAX_RESULT_BYTES })) {
+                ], { maxOpsPerPush: MAX_OPERATION_PAGE_COUNT, maxBytesPerPush: MAX_OPERATION_PAGE_BYTES })) {
                     await onPersistedPage({
                         acceptedOperations: operations.filter(operation => accepted.has(operation)),
                         portableTerminalOperations: operations.filter(operation => !accepted.has(operation)),

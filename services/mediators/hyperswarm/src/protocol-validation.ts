@@ -22,7 +22,7 @@ import {
     MAX_NEGENTROPY_FRAME_BYTES,
     MAX_PROTOCOL_STRING_BYTES,
 } from './protocol-limits.js';
-import { MDIP_EPOCH_SECONDS } from './negentropy/windows.js';
+import { MDIP_EPOCH_SECONDS } from './sync-mapping.js';
 
 const MESSAGE_TYPES = new Set<HyperMessage['type']>([
     'ping',

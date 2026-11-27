@@ -5,8 +5,6 @@ import type {
     ReconciliationWindow,
 } from './adapter.js';
 
-export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
-
 export function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     if (!cursor) {
         return null;

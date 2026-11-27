@@ -19,9 +19,11 @@ import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
-    MDIP_EPOCH_SECONDS,
 } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
-import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
+import {
+    mapOperationToSyncKey,
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
     decodeFramedMessages,
     encodeFramedMessage as encodeTransportFrame,

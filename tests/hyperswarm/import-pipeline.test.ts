@@ -1,7 +1,10 @@
 import { jest } from '@jest/globals';
 
 import CipherNode from '@mdip/cipher/node';
-import Gatekeeper from '@mdip/gatekeeper';
+import Gatekeeper, {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+} from '@mdip/gatekeeper';
 import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type GatekeeperClient from '@mdip/gatekeeper/client';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
@@ -1158,9 +1161,9 @@ describe('import pipeline', () => {
             expect(pages).toHaveLength(2);
             for (const page of pages) {
                 const operations = [...page.acceptedOperations, ...page.portableTerminalOperations];
-                expect(operations.length).toBeLessThanOrEqual(300);
+                expect(operations.length).toBeLessThanOrEqual(MAX_OPERATION_PAGE_COUNT);
                 expect(operations.reduce((bytes, item) => bytes + Buffer.byteLength(JSON.stringify(item)), 0))
-                    .toBeLessThanOrEqual(512 * 1024);
+                    .toBeLessThanOrEqual(MAX_OPERATION_PAGE_BYTES);
             }
             expect(pages.flatMap(page => page.acceptedOperations)).toHaveLength(12);
             expect(result).toMatchObject({

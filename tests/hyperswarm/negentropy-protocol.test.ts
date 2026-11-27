@@ -7,7 +7,7 @@ import {
     normalizePeerCapabilities,
     parseRemoteWindow,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
-import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 
 const h = (c: string) => c.repeat(64);
 const nativeFrame = (value: string): Uint8Array => Buffer.from(value);

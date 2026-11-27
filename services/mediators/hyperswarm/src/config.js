@@ -35,7 +35,10 @@ function parseSyncDbEnv() {
     throw new Error('Invalid KC_HYPR_DB; expected sqlite or postgres');
 }
 
-const negentropyMaxRecordsPerWindow = parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW', 25000);
+const negentropyMaxRecordsPerWindow = parsePositiveIntEnv(
+    'KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW',
+    MAX_NEGENTROPY_WINDOW_RECORDS
+);
 if (negentropyMaxRecordsPerWindow > MAX_NEGENTROPY_WINDOW_RECORDS) {
     throw new Error(`KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW must be <= ${MAX_NEGENTROPY_WINDOW_RECORDS}`);
 }

@@ -12,7 +12,7 @@ import {
     type QueueMessage,
 } from '../../services/mediators/hyperswarm/src/protocol-messages.ts';
 import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
-import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 
 const limits = {
     maxIdsPerRequest: 2,
