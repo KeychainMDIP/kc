@@ -1201,7 +1201,6 @@ describe('ordered catch-up server cursors and scheduling', () => {
         const { operations, store } = createServerStore();
         jest.spyOn(store, 'iterateOrdered').mockResolvedValue([{
             id: operations[0].signature!.hash,
-            ts: 1,
             signedTs: 1,
             syncOrder: 1,
             operation: operations[0],

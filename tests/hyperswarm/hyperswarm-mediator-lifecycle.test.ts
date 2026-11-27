@@ -1237,7 +1237,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         });
         await running.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));

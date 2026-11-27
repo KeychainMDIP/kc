@@ -1326,7 +1326,7 @@ export function createNegentropyCoordinator(options: NegentropyCoordinatorOption
                     }
                 }
                 for (const row of rows) {
-                    const cursor = { ts: row.ts, id: row.id.toLowerCase() };
+                    const cursor = { ts: row.signedTs, id: row.id.toLowerCase() };
                     if (!session.sentPushMaxCursor || compareSyncCursor(cursor, session.sentPushMaxCursor) > 0) {
                         session.sentPushMaxCursor = cursor;
                     }

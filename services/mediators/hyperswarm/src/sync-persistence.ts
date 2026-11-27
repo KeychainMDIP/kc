@@ -13,8 +13,6 @@ export interface SyncPersistenceRecord {
     id: string;
     syncOrder?: number;
     signedTs: number;
-    // Compatibility alias for the current negentropy cursor/window code.
-    ts: number;
     operation: Operation;
 }
 
@@ -240,7 +238,6 @@ export function mapAcceptedOperationsToSyncRecords(operations: AcceptedOperation
             id: mapped.value.idHex,
             syncOrder: getSyncOrder(normalized),
             signedTs: mapped.value.ts,
-            ts: mapped.value.ts,
             operation,
         });
     }

@@ -97,7 +97,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await store.start();
         await store.upsertMany([{
             id: h('z'),
-            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            signedTs: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
             operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
         }]);
 
@@ -337,7 +337,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await store.start();
         await store.upsertMany([{
             id: h('z'),
-            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            signedTs: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
             operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
         }]);
         await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');
@@ -394,7 +394,7 @@ describe('bootstrapSyncStoreFromGatekeeper', () => {
         await store.start();
         await store.upsertMany([{
             id: h('z'),
-            ts: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
+            signedTs: Math.floor(Date.parse('2026-02-10T09:00:00.000Z') / 1000),
             operation: makeOperation('z', '2026-02-10T09:00:00.000Z'),
         }]);
         await store.saveSyncState(HYPR_INDEX_SYNC_STATE_KEYS.snapshotComplete, 'true');

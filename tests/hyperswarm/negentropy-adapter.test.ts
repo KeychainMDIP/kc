@@ -3,7 +3,7 @@ import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentrop
 import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
 import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
 import { Operation } from '@mdip/gatekeeper/types';
-import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
+import type { OperationSyncStore, SyncStoreCursor, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
 import { jest } from '@jest/globals';
 
 const DAY_SECONDS = 24 * 60 * 60;
@@ -42,7 +42,7 @@ async function seedStore(
     await store.reset();
     await store.upsertMany(records.map(item => ({
         id: item.id,
-        ts: item.ts,
+        signedTs: item.ts,
         operation: item.op,
     })));
 }
@@ -266,11 +266,10 @@ describe('NegentropyAdapter', () => {
     it('skips invalid sync rows when rebuilding a window', async () => {
         const validId = h('a');
         const validTs = toEpochSeconds('2026-02-13T00:00:00.000Z');
-        const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
-        const rows: SyncOperationRecord[] = [
-            { id: 'invalid-id', ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 1 },
-            { id: validId, ts: Number.NaN, signedTs: validTs, operation: validOp, insertedAt: 2 },
-            { id: validId, ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 3 },
+        const rows: SyncStoreCursor[] = [
+            { id: 'invalid-id', ts: validTs },
+            { id: validId, ts: Number.NaN },
+            { id: validId, ts: validTs },
         ];
 
         const stubStore: OperationSyncStore = {
@@ -292,7 +291,7 @@ describe('NegentropyAdapter', () => {
                 if (options.after) {
                     return [];
                 }
-                return rows.map(({ id, ts }) => ({ id, ts }));
+                return rows;
             },
             iterateOrdered: async () => [],
         };
@@ -423,12 +422,12 @@ describe('NegentropyAdapter', () => {
     });
 
     it('does not let skipped rows consume capped window capacity', async () => {
-        const rows = [
-            { id: 'not-a-sync-id', ts: 1000, signedTs: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
-            { id: h('b'), ts: 2000, signedTs: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
-            { id: h('c'), ts: Number.NaN, signedTs: 3000, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
-            { id: h('d'), ts: 4000, signedTs: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
-            { id: h('e'), ts: 5000, signedTs: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+        const rows: SyncStoreCursor[] = [
+            { id: 'not-a-sync-id', ts: 1000 },
+            { id: h('b'), ts: 2000 },
+            { id: h('c'), ts: Number.NaN },
+            { id: h('d'), ts: 4000 },
+            { id: h('e'), ts: 5000 },
         ];
 
         const stubStore: OperationSyncStore = {
@@ -450,7 +449,7 @@ describe('NegentropyAdapter', () => {
                 if (options.after) {
                     return [];
                 }
-                return rows.map(({ id, ts }) => ({ id, ts }));
+                return rows;
             },
             async iterateOrdered() { return []; },
         };

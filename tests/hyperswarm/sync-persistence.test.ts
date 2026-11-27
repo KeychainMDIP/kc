@@ -174,7 +174,6 @@ describe('sync-persistence helpers', () => {
         expect(result.records[0].id).toBe(h('a'));
         expect(result.records[0].syncOrder).toBeUndefined();
         expect(result.records[0].signedTs).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
-        expect(result.records[0].ts).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
         expect(result.invalid).toBe(1);
     });
 
@@ -199,7 +198,6 @@ describe('sync-persistence helpers', () => {
                 id: h('a'),
                 syncOrder: 42,
                 signedTs: Math.floor(Date.parse(valid.signature!.signed) / 1000),
-                ts: Math.floor(Date.parse(valid.signature!.signed) / 1000),
                 operation: valid,
             },
         ]);
@@ -349,7 +347,6 @@ describe('sync-persistence helpers', () => {
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
         expect(result.records.length).toBe(1);
         expect(result.records[0].signedTs).toBe(MDIP_EPOCH_SECONDS);
-        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
         expect(result.invalid).toBe(0);
     });
 
@@ -357,7 +354,7 @@ describe('sync-persistence helpers', () => {
         const legacyEpoch = makeCreateOp('a', '1970-01-01T00:00:00.000Z');
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
         expect(result.records.length).toBe(1);
-        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
+        expect(result.records[0].signedTs).toBe(MDIP_EPOCH_SECONDS);
         expect(result.invalid).toBe(0);
     });
 
@@ -434,7 +431,6 @@ describe('sync-persistence helpers', () => {
         const getByIds = jest.fn(async (ids: string[]) => ids.includes(h('a'))
             ? [{
                 id: h('a'),
-                ts: Math.floor(Date.parse(known.signature!.signed) / 1000),
                 signedTs: Math.floor(Date.parse(known.signature!.signed) / 1000),
                 operation: known,
                 insertedAt: 1,

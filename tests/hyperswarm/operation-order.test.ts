@@ -32,7 +32,6 @@ function makeRecord(
         id: h(hashChar),
         syncOrder,
         signedTs,
-        ts: signedTs,
         operation: makeOp(hashChar, new Date(signedTs * 1000).toISOString()),
         insertedAt: 1,
     };

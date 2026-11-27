@@ -424,7 +424,7 @@ function trackNodeWork(
             const gatekeeperOperations = events.map(event => event.operation);
             const gatekeeperIds = operationIds(gatekeeperOperations);
             const storeIds = normalizeIds(rows.map(row => row.id));
-            const cursors = rows.map(row => ({ ts: row.ts, id: row.id }));
+            const cursors = rows.map(row => ({ ts: row.signedTs, id: row.id }));
             const orderedCursors = orderedRows.map(row => ({
                 syncOrder: row.syncOrder!,
                 id: row.id,
@@ -450,8 +450,8 @@ function trackNodeWork(
                     sample: sampleIds(storeIds),
                     cursors,
                     orderedCursors,
-                    firstCursor: first ? { ts: first.ts, id: first.id } : null,
-                    lastCursor: last ? { ts: last.ts, id: last.id } : null,
+                    firstCursor: first ? { ts: first.signedTs, id: first.id } : null,
+                    lastCursor: last ? { ts: last.signedTs, id: last.id } : null,
                     lastOrderedCursor: lastOrdered?.syncOrder !== undefined
                         ? { syncOrder: lastOrdered.syncOrder, id: lastOrdered.id }
                         : null,

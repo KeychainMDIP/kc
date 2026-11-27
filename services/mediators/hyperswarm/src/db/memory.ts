@@ -70,7 +70,6 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
                 id: record.id,
                 syncOrder,
                 signedTs,
-                ts: signedTs,
                 operation: record.operation,
                 insertedAt,
             });
@@ -142,7 +141,7 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
 
     async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
         const limit = options.limit ?? 1000;
-        const rows = Array.from(this.records.values(), ({ id, ts }) => ({ id, ts }))
+        const rows = Array.from(this.records.values(), ({ id, signedTs }) => ({ id, ts: signedTs }))
             .sort((a, b) => a.ts === b.ts ? a.id.localeCompare(b.id) : a.ts - b.ts)
             .filter(item => {
                 if (options.after
@@ -207,13 +206,11 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

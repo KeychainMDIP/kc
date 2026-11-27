@@ -396,7 +396,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         if (operations.length > 0) {
             await source.store.upsertMany(operations.map(operation => ({
                 id: operation.signature!.hash,
-                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 operation,
             })));
         }
@@ -508,7 +508,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const latestSignedTimestamp = Math.floor(Date.parse(operation.signature!.signed) / 1000);
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: latestSignedTimestamp,
+            signedTs: latestSignedTimestamp,
             operation,
         }]);
         const { peerKey, pair } = attachPeer(protocolNode);
@@ -559,7 +559,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             operation.signature!.signed = new Date(localLatestSignedTimestamp * 1000).toISOString();
             await protocolNode.store.upsertMany([{
                 id: operation.signature!.hash,
-                ts: localLatestSignedTimestamp,
+                signedTs: localLatestSignedTimestamp,
                 operation,
             }]);
         }
@@ -1615,7 +1615,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: operations.length });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -1685,7 +1685,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: operations.length });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -1754,7 +1754,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -1797,7 +1797,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2116,7 +2116,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2163,7 +2163,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2217,7 +2217,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2270,7 +2270,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: offered.signature!.hash,
-            ts: Math.floor(Date.parse(offered.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(offered.signature!.signed) / 1000),
             operation: offered,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -2312,7 +2312,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ keyByte: 0x33 });
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         mockTerminalResponder(protocolNode);
@@ -2412,7 +2412,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 1 });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         mockTerminalResponder(protocolNode);
@@ -2713,7 +2713,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             if (operations.length > 0) {
                 await protocolNode.store.upsertMany([{
                     id: operations[0].signature!.hash,
-                    ts: Math.floor(Date.parse(operations[0].signature!.signed) / 1000),
+                    signedTs: Math.floor(Date.parse(operations[0].signature!.signed) / 1000),
                     syncOrder: 1,
                     operation: operations[0],
                 }]);
@@ -3008,7 +3008,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const protocolNode = await createNode();
             await protocolNode.store.upsertMany([{
                 id: operation.signature!.hash,
-                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 operation,
             }]);
             const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -3099,7 +3099,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -4177,7 +4177,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: 1 });
         await protocolNode.store.upsertMany([localA, localB].map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {});
@@ -4261,7 +4261,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: 2 });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
@@ -4325,7 +4325,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ maxRecords: 2 });
         await protocolNode.store.upsertMany(operations.map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const buildSnapshot = jest.spyOn(protocolNode.adapter, 'buildSnapshotForWindow');
@@ -4403,13 +4403,13 @@ describe('hyperswarm mediator protocol characterization', () => {
             if (failedType === 'neg_close') {
                 await protocolNode.store.upsertMany([{
                     id: operation.signature!.hash,
-                    ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                    signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                     operation,
                 }]);
             }
             await peerNode.store.upsertMany([{
                 id: operation.signature!.hash,
-                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 operation,
             }]);
             const { peerKey, pair } = attachPeer(protocolNode, {});
@@ -4475,7 +4475,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const createEngine = protocolNode.adapter.createEngineForSnapshot.bind(protocolNode.adapter);
@@ -4804,7 +4804,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         });
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));
@@ -5079,7 +5079,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords });
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const { peerKey, pair } = attachPeer(protocolNode, {});
@@ -5165,7 +5165,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode({ keyByte: 0x33, maxRecords: 2 });
         await protocolNode.store.upsertMany([operationA, operationD, operationE].map(operation => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         })));
         const { peerKey, pair } = attachPeer(protocolNode, {});
@@ -5389,10 +5389,10 @@ describe('hyperswarm mediator protocol characterization', () => {
             }
             return {
                 id: mapped.value.idHex,
-                ts: mapped.value.ts,
+                signedTs: mapped.value.ts,
                 operation,
             };
-        }).sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id));
+        }).sort((a, b) => a.signedTs - b.signedTs || a.id.localeCompare(b.id));
         await protocolNode.store.upsertMany(fillerRecords);
         const { peerKey, pair } = attachPeer(protocolNode, {});
         const getByIds = jest.spyOn(protocolNode.store, 'getByIds');
@@ -5411,7 +5411,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const continuationWindow = {
             ...(open.window as Record<string, unknown>),
             after: {
-                ts: fillerRecords[0].ts,
+                ts: fillerRecords[0].signedTs,
                 id: fillerRecords[0].id,
             },
         };
@@ -5476,7 +5476,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         await deliverAuthorizedPush(protocolNode, peerKey, pair, open, [operation]);
         await protocolNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.receiveMsg(peerKey, {
@@ -5640,7 +5640,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));
@@ -6266,7 +6266,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             if (operations.length > 0) {
                 await protocolNode.store.upsertMany([{
                     id: operations[0].signature!.hash,
-                    ts: Math.floor(Date.parse(operations[0].signature!.signed) / 1000),
+                    signedTs: Math.floor(Date.parse(operations[0].signature!.signed) / 1000),
                     syncOrder: 1,
                     operation: operations[0],
                 }]);
@@ -6738,7 +6738,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const protocolNode = await createNode({ keyByte: 0x22 });
             await protocolNode.store.upsertMany([{
                 id: operation.signature!.hash,
-                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 syncOrder: 1,
                 operation,
             }]);
@@ -6848,7 +6848,7 @@ describe('hyperswarm mediator protocol characterization', () => {
             const protocolNode = await createNode();
             await protocolNode.store.upsertMany([{
                 id: operation.signature!.hash,
-                ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+                signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
                 syncOrder: boundary === 'page lookup' ? 1 : undefined,
                 operation,
             }]);
@@ -6927,7 +6927,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.slice(0, 301).map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));
@@ -6954,7 +6954,7 @@ describe('hyperswarm mediator protocol characterization', () => {
 
         await protocolNode.store.upsertMany([{
             id: operations[301].signature!.hash,
-            ts: Math.floor(Date.parse(operations[301].signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operations[301].signature!.signed) / 1000),
             operation: operations[301],
         }]);
         await protocolNode.node.run(() => protocolNode.node.mediator.__test.processInboundPeerData(
@@ -6979,7 +6979,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));
@@ -7028,7 +7028,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const protocolNode = await createNode();
         await protocolNode.store.upsertMany(operations.map((operation, index) => ({
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             syncOrder: index + 1,
             operation,
         })));
@@ -7232,7 +7232,7 @@ describe('hyperswarm mediator protocol characterization', () => {
         const unorderedNode = await createNode();
         await unorderedNode.store.upsertMany([{
             id: operation.signature!.hash,
-            ts: Math.floor(Date.parse(operation.signature!.signed) / 1000),
+            signedTs: Math.floor(Date.parse(operation.signature!.signed) / 1000),
             operation,
         }]);
         const unorderedPeer = attachPeer(unorderedNode, {

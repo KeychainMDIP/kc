@@ -49,7 +49,7 @@ describe('Negentropy coordinator', () => {
             hash: cipher.hashJSON(unsigned), signed: unsigned.created, value: 'signature',
         } };
         await store.upsertMany([{
-            id: operation.signature.hash, ts: 1_767_225_600, syncOrder: 1, operation,
+            id: operation.signature.hash, signedTs: 1_767_225_600, syncOrder: 1, operation,
         }]);
         const outcomes: Array<{ nextMsg: Uint8Array | null; haveIds: string[]; needIds: string[] }> = [];
         const adapter = {
@@ -449,7 +449,7 @@ describe('Negentropy coordinator', () => {
             await openRemote(open, 'remote-corrupt-record');
             const corruptOperation = { ...operation, mdip: { ...operation.mdip, registry: 'local' } };
             jest.spyOn(store, 'getByIds').mockResolvedValueOnce([{
-                id: operation.signature.hash, ts: 1_767_225_600, signedTs: 1_767_225_600,
+                id: operation.signature.hash, signedTs: 1_767_225_600,
                 insertedAt: 1_767_225_600, syncOrder: 1,
                 operation: corruptOperation,
             }]);
@@ -463,7 +463,7 @@ describe('Negentropy coordinator', () => {
             coordinator.reset();
             await openRemote(open, 'remote-mismatched-record');
             jest.spyOn(store, 'getByIds').mockResolvedValueOnce([{
-                id: 'f'.repeat(64), ts: 1_767_225_600, signedTs: 1_767_225_600,
+                id: 'f'.repeat(64), signedTs: 1_767_225_600,
                 insertedAt: 1_767_225_600, syncOrder: 1, operation,
             }]);
             onSessionClosed.mockClear();
@@ -558,7 +558,7 @@ describe('Negentropy coordinator', () => {
             });
             await store.upsertMany(largeOperations.map((item, index) => ({
                 id: item.signature.hash,
-                ts: 1_767_225_700 + index,
+                signedTs: 1_767_225_700 + index,
                 syncOrder: 2 + index,
                 operation: item,
             })));
@@ -1410,7 +1410,7 @@ describe('Negentropy coordinator', () => {
             filterRetryDelayedIds: (ids: string[]) => ({ eligibleIds: ids, pendingIds: [], capacityDeferredIds: [] }),
             refreshIndex: async () => {
                 if (outcome !== 'accepted') throw failure;
-                await store.upsertMany([{ id: operation.signature.hash, ts: 1_767_225_600, syncOrder: 1, operation }]);
+                await store.upsertMany([{ id: operation.signature.hash, signedTs: 1_767_225_600, syncOrder: 1, operation }]);
                 return {
                     mode: 'changes', countBefore: 0, countAfter: 1, pages: 1, exported: 1, mapped: 1,
                     invalid: 0, inserted: 1, updated: 0, deleted: 0, snapshotComplete: true, durationMs: 0,

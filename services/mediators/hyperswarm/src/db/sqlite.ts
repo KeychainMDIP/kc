@@ -361,7 +361,6 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
             id: row.id,
             syncOrder: row.sync_order ?? undefined,
             signedTs: row.signed_ts,
-            ts: row.signed_ts,
             operation: JSON.parse(row.operation_json),
             insertedAt: row.inserted_at,
         };
@@ -471,13 +470,11 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

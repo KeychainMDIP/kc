@@ -6,10 +6,6 @@ function hasSyncOrder(record: SyncOperationRecord): record is SyncOperationRecor
     return Number.isSafeInteger(record.syncOrder);
 }
 
-function getSignedTimestamp(record: SyncOperationRecord): number {
-    return record.signedTs ?? record.ts;
-}
-
 export function compareSyncOperationRecordsForPush(
     left: SyncOperationRecord,
     right: SyncOperationRecord,
@@ -21,8 +17,8 @@ export function compareSyncOperationRecordsForPush(
         return left.syncOrder - right.syncOrder;
     }
 
-    const leftSignedTs = getSignedTimestamp(left);
-    const rightSignedTs = getSignedTimestamp(right);
+    const leftSignedTs = left.signedTs;
+    const rightSignedTs = right.signedTs;
     if (leftSignedTs !== rightSignedTs) {
         return leftSignedTs - rightSignedTs;
     }

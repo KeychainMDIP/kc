@@ -38,9 +38,9 @@ const opC: Operation = {
     },
 };
 
-const recA = { id: h('a'), signedTs: 1000, ts: 1000, operation: opA };
-const recB = { id: h('b'), signedTs: 2000, ts: 2000, operation: opB };
-const recC = { id: h('c'), syncOrder: 10, signedTs: 2000, ts: 2000, operation: opC };
+const recA = { id: h('a'), signedTs: 1000, operation: opA };
+const recB = { id: h('b'), signedTs: 2000, operation: opB };
+const recC = { id: h('c'), syncOrder: 10, signedTs: 2000, operation: opC };
 
 async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     await store.start();
@@ -116,7 +116,6 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     const sortedAll = await store.getByIds(sortedKeys.map(item => item.id));
     expect(sortedAll.map(item => item.id)).toStrictEqual([recA.id, recB.id, recC.id]);
     expect(sortedAll.map(item => item.signedTs)).toStrictEqual([1000, 2000, 2000]);
-    expect(sortedAll.map(item => item.ts)).toStrictEqual([1000, 2000, 2000]);
     expect(sortedAll.every(item => Number.isFinite(item.insertedAt))).toBe(true);
     expect(sortedAll.find(item => item.id === recA.id)?.syncOrder).toBe(5);
     expect(sortedAll.find(item => item.id === recC.id)?.syncOrder).toBe(10);
@@ -368,7 +367,6 @@ describe('SqliteOperationSyncStore', () => {
         expect(rows[0]).toMatchObject({
             id: recA.id,
             signedTs: 1234,
-            ts: 1234,
             insertedAt: 5678,
         });
 
@@ -397,7 +395,7 @@ describe('SqliteOperationSyncStore', () => {
             recA,
             {
                 id: h('d'),
-                ts: 4000,
+                signedTs: 4000,
                 operation: circular,
             } as any,
         ])).rejects.toThrow();
@@ -419,7 +417,7 @@ describe('SqliteOperationSyncStore', () => {
                 recA,
                 {
                     id: h('d'),
-                    ts: 4000,
+                    signedTs: 4000,
                     operation: circular,
                 } as any,
             ],

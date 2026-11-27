@@ -372,7 +372,6 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
             id: row.id,
             syncOrder: row.sync_order == null ? undefined : this.toNumber(row.sync_order),
             signedTs: this.toNumber(row.signed_ts),
-            ts: this.toNumber(row.signed_ts),
             operation,
             insertedAt: this.toNumber(row.inserted_at),
         };
@@ -501,13 +500,11 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

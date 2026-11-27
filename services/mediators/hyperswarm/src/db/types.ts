@@ -4,8 +4,6 @@ export interface SyncOperationRecord {
     id: string;
     syncOrder?: number;
     signedTs: number;
-    // Compatibility alias for the current negentropy cursor/window code.
-    ts: number;
     operation: Operation;
     insertedAt: number;
 }
@@ -13,8 +11,7 @@ export interface SyncOperationRecord {
 export interface SyncOperationWriteRecord {
     id: string;
     syncOrder?: number;
-    signedTs?: number;
-    ts?: number;
+    signedTs: number;
     operation: Operation;
     insertedAt?: number;
 }
