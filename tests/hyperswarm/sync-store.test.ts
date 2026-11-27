@@ -102,6 +102,7 @@ async function runStoreContractTests(store: OperationSyncStore): Promise<void> {
     expect(await store.loadSyncState('mode')).toBe('snapshot');
     expect(await store.has(recB.id)).toBe(false);
     await store.upsertMany([recB]);
+    expect(await store.applySyncPage({ records: [] })).toStrictEqual({ inserted: 0, updated: 0, deleted: 0 });
 
     expect(await store.count()).toBe(3);
     expect(await store.countOrdered()).toBe(2);
@@ -280,6 +281,7 @@ describe('SqliteOperationSyncStore', () => {
 
         // eslint-disable-next-line sonarjs/no-duplicate-string
         await expect(store.reset()).rejects.toThrow('Call start() first');
+        await expect(store.deleteBySyncOrder(1)).rejects.toThrow('Call start() first');
         await expect(store.upsertMany([recA])).rejects.toThrow('Call start() first');
         await expect(store.applySyncPage({ records: [] })).rejects.toThrow('Call start() first');
         await expect(store.loadSyncState('cursor')).rejects.toThrow('Call start() first');
