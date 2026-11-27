@@ -1,0 +1,452 @@
+{
+  "wireVersion": 2,
+  "operationIdentity": [
+    {
+      "name": "fractional seconds with an explicit timezone offset",
+      "unsigned": {
+        "type": "create",
+        "created": "2026-07-01T08:00:00.000Z",
+        "mdip": {
+          "version": 1,
+          "type": "agent",
+          "registry": "hyperswarm"
+        }
+      },
+      "canonical": "{\"created\":\"2026-07-01T08:00:00.000Z\",\"mdip\":{\"registry\":\"hyperswarm\",\"type\":\"agent\",\"version\":1},\"type\":\"create\"}",
+      "signature": {
+        "signed": "2026-07-01T10:30:00.987+02:30",
+        "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+        "value": "fixture-signature-1"
+      },
+      "timestamp": 1782892800
+    },
+    {
+      "name": "timestamp before the MDIP epoch",
+      "unsigned": {
+        "type": "update",
+        "controller": "did:test:z3v8AuafbhTJJ8qqV5kEtfyd3c4NJm6jyUCpEkQrJU4YgdR6UFk",
+        "previd": "z3v8AuaExample",
+        "data": {
+          "active": true,
+          "label": "pre-epoch"
+        }
+      },
+      "canonical": "{\"controller\":\"did:test:z3v8AuafbhTJJ8qqV5kEtfyd3c4NJm6jyUCpEkQrJU4YgdR6UFk\",\"data\":{\"active\":true,\"label\":\"pre-epoch\"},\"previd\":\"z3v8AuaExample\",\"type\":\"update\"}",
+      "signature": {
+        "signed": "2023-12-31T23:59:59.999Z",
+        "hash": "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b",
+        "value": "fixture-signature-2"
+      },
+      "timestamp": 1704067200
+    }
+  ],
+  "nativeEngine": {
+    "protocolByte": "61",
+    "framesBase64": [
+      "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI=",
+      "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ="
+    ]
+  },
+  "transcripts": {
+    "minimalPeer": [
+      {
+        "type": "ping",
+        "version": 2,
+        "latestTs": 1782892800
+      },
+      {
+        "type": "neg_open",
+        "sessionId": "fixture-session",
+        "windowSeq": 0,
+        "window": {
+          "until": 1782892801,
+          "limit": 25000
+        },
+        "round": 0,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI="
+      },
+      {
+        "type": "neg_msg",
+        "sessionId": "fixture-session",
+        "windowSeq": 0,
+        "round": 1,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ=",
+        "continuation": null
+      },
+      {
+        "type": "ops_offer",
+        "sessionId": "fixture-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+        ]
+      },
+      {
+        "type": "ops_req",
+        "sessionId": "fixture-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+        ]
+      },
+      {
+        "type": "ops_push",
+        "sessionId": "fixture-session",
+        "transferId": 0,
+        "page": 0,
+        "hasMore": false,
+        "operations": [
+          {
+            "type": "create",
+            "created": "2026-07-01T08:00:00.000Z",
+            "mdip": {
+              "version": 1,
+              "type": "agent",
+              "registry": "hyperswarm"
+            },
+            "signature": {
+              "signed": "2026-07-01T10:30:00.987+02:30",
+              "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+              "value": "fixture-signature-1"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ops_ack",
+        "sessionId": "fixture-session",
+        "transferId": 0,
+        "page": 0
+      },
+      {
+        "type": "neg_close",
+        "sessionId": "fixture-session",
+        "windowSeq": 0,
+        "round": 1,
+        "outcome": "complete",
+        "continuation": null
+      }
+    ],
+    "multiWindow": [
+      {
+        "type": "neg_open",
+        "sessionId": "window-session",
+        "windowSeq": 0,
+        "window": {
+          "until": 1782892801,
+          "limit": 1
+        },
+        "round": 0,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI="
+      },
+      {
+        "type": "neg_msg",
+        "sessionId": "window-session",
+        "windowSeq": 0,
+        "round": 1,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ=",
+        "continuation": {
+          "ts": 1782892800,
+          "id": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+        }
+      },
+      {
+        "type": "neg_open",
+        "sessionId": "window-session",
+        "windowSeq": 1,
+        "window": {
+          "until": 1782892801,
+          "limit": 1,
+          "after": {
+            "ts": 1782892800,
+            "id": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+          }
+        },
+        "round": 0,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAI=",
+        "previousContinuation": {
+          "ts": 1782892800,
+          "id": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+        }
+      },
+      {
+        "type": "neg_msg",
+        "sessionId": "window-session",
+        "windowSeq": 1,
+        "round": 1,
+        "frame": "YQAAAgMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQ=",
+        "continuation": null
+      },
+      {
+        "type": "neg_close",
+        "sessionId": "window-session",
+        "windowSeq": 1,
+        "round": 1,
+        "outcome": "complete",
+        "continuation": null
+      }
+    ],
+    "pagedTransfer": [
+      {
+        "type": "ops_offer",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+          "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b"
+        ]
+      },
+      {
+        "type": "ops_req",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+          "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b"
+        ]
+      },
+      {
+        "type": "ops_push",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "page": 0,
+        "hasMore": true,
+        "operations": [
+          {
+            "type": "create",
+            "created": "2026-07-01T08:00:00.000Z",
+            "mdip": {
+              "version": 1,
+              "type": "agent",
+              "registry": "hyperswarm"
+            },
+            "signature": {
+              "signed": "2026-07-01T10:30:00.987+02:30",
+              "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+              "value": "fixture-signature-1"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ops_ack",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "page": 0
+      },
+      {
+        "type": "ops_push",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "page": 1,
+        "hasMore": false,
+        "operations": [
+          {
+            "type": "update",
+            "controller": "did:test:z3v8AuafbhTJJ8qqV5kEtfyd3c4NJm6jyUCpEkQrJU4YgdR6UFk",
+            "previd": "z3v8AuaExample",
+            "data": {
+              "active": true,
+              "label": "pre-epoch"
+            },
+            "signature": {
+              "signed": "2023-12-31T23:59:59.999Z",
+              "hash": "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b",
+              "value": "fixture-signature-2"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ops_ack",
+        "sessionId": "paged-session",
+        "transferId": 0,
+        "page": 1
+      }
+    ],
+    "incompleteTransfer": [
+      {
+        "type": "ops_offer",
+        "sessionId": "incomplete-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+          "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b"
+        ]
+      },
+      {
+        "type": "ops_req",
+        "sessionId": "incomplete-session",
+        "transferId": 0,
+        "ids": [
+          "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e"
+        ],
+        "incomplete": true
+      },
+      {
+        "type": "ops_push",
+        "sessionId": "incomplete-session",
+        "transferId": 0,
+        "page": 0,
+        "hasMore": false,
+        "operations": [
+          {
+            "type": "create",
+            "created": "2026-07-01T08:00:00.000Z",
+            "mdip": {
+              "version": 1,
+              "type": "agent",
+              "registry": "hyperswarm"
+            },
+            "signature": {
+              "signed": "2026-07-01T10:30:00.987+02:30",
+              "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+              "value": "fixture-signature-1"
+            }
+          }
+        ]
+      },
+      {
+        "type": "ops_ack",
+        "sessionId": "incomplete-session",
+        "transferId": 0,
+        "page": 0,
+        "incomplete": true
+      },
+      {
+        "type": "neg_close",
+        "sessionId": "incomplete-session",
+        "windowSeq": 0,
+        "round": 1,
+        "outcome": "incomplete"
+      }
+    ],
+    "orderedFinalPage": [
+      {
+        "type": "ordered_catchup_req",
+        "sessionId": "ordered-session"
+      },
+      {
+        "type": "ordered_catchup_push",
+        "sessionId": "ordered-session",
+        "cursor": {
+          "syncOrder": 2,
+          "id": "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b"
+        },
+        "hasMore": false,
+        "operations": [
+          {
+            "type": "create",
+            "created": "2026-07-01T08:00:00.000Z",
+            "mdip": {
+              "version": 1,
+              "type": "agent",
+              "registry": "hyperswarm"
+            },
+            "signature": {
+              "signed": "2026-07-01T10:30:00.987+02:30",
+              "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+              "value": "fixture-signature-1"
+            }
+          },
+          {
+            "type": "update",
+            "controller": "did:test:z3v8AuafbhTJJ8qqV5kEtfyd3c4NJm6jyUCpEkQrJU4YgdR6UFk",
+            "previd": "z3v8AuaExample",
+            "data": {
+              "active": true,
+              "label": "pre-epoch"
+            },
+            "signature": {
+              "signed": "2023-12-31T23:59:59.999Z",
+              "hash": "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b",
+              "value": "fixture-signature-2"
+            }
+          }
+        ]
+      }
+    ],
+    "orderedZeroRows": [
+      {
+        "type": "ordered_catchup_req",
+        "sessionId": "ordered-empty-session",
+        "after": {
+          "syncOrder": 2,
+          "id": "9e6c11dfc7a3e4e6bb0438f707e761cbaa43c6baa62227a5be872fc89516a39b"
+        }
+      },
+      {
+        "type": "ordered_catchup_done",
+        "sessionId": "ordered-empty-session"
+      }
+    ],
+    "optionalQueue": [
+      {
+        "type": "queue",
+        "operations": [
+          {
+            "type": "create",
+            "created": "2026-07-01T08:00:00.000Z",
+            "mdip": {
+              "version": 1,
+              "type": "agent",
+              "registry": "hyperswarm"
+            },
+            "signature": {
+              "signed": "2026-07-01T10:30:00.987+02:30",
+              "hash": "0ed77ea66d7d5802a6d927387755b7394ceea76d6aca705075ffff2aad24ae2e",
+              "value": "fixture-signature-1"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "statefulRejections": [
+    {
+      "reason": "unsolicited operation page",
+      "message": {
+        "type": "ops_push",
+        "sessionId": "unknown-session",
+        "transferId": 9,
+        "page": 0,
+        "hasMore": false,
+        "operations": []
+      }
+    },
+    {
+      "reason": "stale acknowledgement",
+      "message": {
+        "type": "ops_ack",
+        "sessionId": "fixture-session",
+        "transferId": 0,
+        "page": 0
+      }
+    },
+    {
+      "reason": "false completion",
+      "message": {
+        "type": "neg_close",
+        "sessionId": "fixture-session",
+        "windowSeq": 0,
+        "round": 1,
+        "outcome": "complete",
+        "continuation": null
+      }
+    },
+    {
+      "reason": "malformed continuation",
+      "message": {
+        "type": "neg_close",
+        "sessionId": "fixture-session",
+        "windowSeq": 0,
+        "round": 1,
+        "outcome": "complete",
+        "continuation": {
+          "ts": 1782892800,
+          "id": "0ED77EA66D7D5802A6D927387755B7394CEEA76D6ACA705075FFFF2AAD24AE2E"
+        }
+      }
+    }
+  ]
+}

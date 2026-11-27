@@ -10,6 +10,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -191,6 +193,29 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         return result.rows[0]?.value ?? null;
     }
 
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        const after = options.after;
+        const params: Array<number | string> = [prefix];
+        const afterPredicate = after === undefined
+            ? ''
+            : `AND key COLLATE "C" > $${params.push(after)}`;
+        const limitParam = params.push(options.limit);
+        const result = await this.getPool().query<SyncStateEntry>(
+            `SELECT key, value
+             FROM hyperswarm_sync_state
+             WHERE LEFT(key, char_length($1)) COLLATE "C" = $1 COLLATE "C"
+               ${afterPredicate}
+             ORDER BY key COLLATE "C"
+             LIMIT $${limitParam}`,
+            params,
+        );
+        return result.rows;
+    }
+
     async saveSyncState(key: string, value: string | null): Promise<void> {
         this.getPool();
 
@@ -215,51 +240,6 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
         return ids
             .map(id => byId.get(id))
             .filter((item): item is SyncOperationRecord => !!item);
-    }
-
-    async iterateSorted(options: SyncStoreListOptions = {}): Promise<SyncOperationRecord[]> {
-        const limit = options.limit ?? 1000;
-        const after = options.after;
-        const fromTs = options.fromTs;
-        const toTs = options.toTs;
-
-        const params: Array<number | string> = [];
-        const predicates: string[] = [];
-
-        if (after) {
-            const afterTsParam = params.push(after.ts);
-            const afterIdParam = params.push(after.id);
-            predicates.push(
-                `(signed_ts > $${afterTsParam} OR (signed_ts = $${afterTsParam} AND id > $${afterIdParam}))`
-            );
-        }
-
-        if (typeof fromTs === 'number') {
-            const fromTsParam = params.push(fromTs);
-            predicates.push(`signed_ts >= $${fromTsParam}`);
-        }
-
-        if (typeof toTs === 'number') {
-            const toTsParam = params.push(toTs);
-            predicates.push(`signed_ts <= $${toTsParam}`);
-        }
-
-        const where = predicates.length > 0
-            ? `WHERE ${predicates.join(' AND ')}`
-            : '';
-
-        const limitParam = params.push(limit);
-
-        const result = await this.getPool().query<SyncRow>(
-            `SELECT id, sync_order, signed_ts, operation_json, inserted_at
-             FROM hyperswarm_sync_operations
-             ${where}
-             ORDER BY signed_ts ASC, id ASC
-             LIMIT $${limitParam}`,
-            params
-        );
-
-        return result.rows.map(row => this.mapRow(row));
     }
 
     async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
@@ -392,7 +372,6 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
             id: row.id,
             syncOrder: row.sync_order == null ? undefined : this.toNumber(row.sync_order),
             signedTs: this.toNumber(row.signed_ts),
-            ts: this.toNumber(row.signed_ts),
             operation,
             insertedAt: this.toNumber(row.inserted_at),
         };
@@ -521,13 +500,11 @@ export default class PostgresOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

@@ -12,6 +12,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -184,6 +186,31 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         return row?.value ?? null;
     }
 
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!this.db) {
+            throw new Error(SQLITE_NOT_STARTED_ERROR);
+        }
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        const after = options.after;
+        const rows = await this.db.all<SyncStateEntry[]>(
+            `SELECT key, value
+             FROM sync_state
+             WHERE substr(key, 1, length(?)) = ?
+               ${after === undefined ? '' : 'AND key > ?'}
+             ORDER BY key
+             LIMIT ?`,
+            ...(
+                after === undefined
+                    ? [prefix, prefix, options.limit]
+                    : [prefix, prefix, after, options.limit]
+            ),
+        );
+        return rows.map(row => ({ key: row.key, value: row.value }));
+    }
+
     async saveSyncState(key: string, value: string | null): Promise<void> {
         if (!this.db) {
             throw new Error(SQLITE_NOT_STARTED_ERROR);
@@ -213,51 +240,6 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
         return ids
             .map(id => byId.get(id))
             .filter((item): item is SyncOperationRecord => !!item);
-    }
-
-    async iterateSorted(options: SyncStoreListOptions = {}): Promise<SyncOperationRecord[]> {
-        if (!this.db) {
-            throw new Error(SQLITE_NOT_STARTED_ERROR);
-        }
-
-        const limit = options.limit ?? 1000;
-        const after = options.after;
-        const fromTs = options.fromTs;
-        const toTs = options.toTs;
-        const params: Array<number | string> = [];
-        const predicates: string[] = [];
-
-        if (after) {
-            predicates.push('(signed_ts > ? OR (signed_ts = ? AND id > ?))');
-            params.push(after.ts, after.ts, after.id);
-        }
-
-        if (typeof fromTs === 'number') {
-            predicates.push('signed_ts >= ?');
-            params.push(fromTs);
-        }
-
-        if (typeof toTs === 'number') {
-            predicates.push('signed_ts <= ?');
-            params.push(toTs);
-        }
-
-        const where = predicates.length > 0
-            ? `WHERE ${predicates.join(' AND ')}`
-            : '';
-
-        params.push(limit);
-
-        const rows = await this.db.all<SyncRow[]>(
-            `SELECT id, sync_order, signed_ts, operation_json, inserted_at
-             FROM operations
-             ${where}
-             ORDER BY signed_ts ASC, id ASC
-             LIMIT ?`,
-            ...params
-        );
-
-        return rows.map(row => this.mapRow(row));
     }
 
     async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
@@ -379,7 +361,6 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
             id: row.id,
             syncOrder: row.sync_order ?? undefined,
             signedTs: row.signed_ts,
-            ts: row.signed_ts,
             operation: JSON.parse(row.operation_json),
             insertedAt: row.inserted_at,
         };
@@ -489,13 +470,11 @@ export default class SqliteOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

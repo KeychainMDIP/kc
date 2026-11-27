@@ -1,0 +1,432 @@
+import { isValidDID } from '@mdip/ipfs/utils';
+import type { Operation } from '@mdip/gatekeeper/types';
+import type {
+    HyperMessage,
+    PingMessage,
+    QueueMessage,
+} from './protocol-messages.js';
+import { NEG_CLOSE_OUTCOMES, WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
+import { NEG_SYNC_ID_RE } from './negentropy/protocol.js';
+import {
+    validateIdList,
+    validateOperationPage,
+    type OpsPushBatchingOptions,
+    type TransferValidationResult,
+    type ValidatedOperationPage,
+} from './negentropy/transfer.js';
+import { mapOperationToSyncKey } from './sync-mapping.js';
+import { hasContentVerifiedOperationId } from './sync-persistence.js';
+import {
+    MAX_ADVERTISED_DID_BYTES,
+    MAX_ADVERTISED_PEERS,
+    MAX_NEGENTROPY_FRAME_BYTES,
+    MAX_PROTOCOL_STRING_BYTES,
+} from './protocol-limits.js';
+import { MDIP_EPOCH_SECONDS } from './sync-mapping.js';
+
+const MESSAGE_TYPES = new Set<HyperMessage['type']>([
+    'ping',
+    'queue',
+    'ordered_catchup_req',
+    'ordered_catchup_push',
+    'ordered_catchup_done',
+    'neg_open',
+    'neg_msg',
+    'ops_offer',
+    'ops_req',
+    'ops_push',
+    'ops_ack',
+    'neg_close',
+]);
+const NEG_CLOSE_OUTCOME_SET = new Set<string>(NEG_CLOSE_OUTCOMES);
+
+type ProtocolValidationResult<T> = TransferValidationResult<T>;
+
+export interface ValidatedHyperMessagePayload {
+    operationPage?: ValidatedOperationPage;
+}
+
+const MESSAGE_PROPERTIES: Record<HyperMessage['type'], ReadonlySet<string>> = {
+    ping: new Set(['type', 'version', 'name', 'peerDids', 'latestTs', 'ordered']),
+    queue: new Set(['type', 'operations']),
+    ordered_catchup_req: new Set(['type', 'sessionId', 'after']),
+    ordered_catchup_push: new Set(['type', 'sessionId', 'cursor', 'hasMore', 'operations']),
+    ordered_catchup_done: new Set(['type', 'sessionId']),
+    neg_open: new Set(['type', 'sessionId', 'windowSeq', 'window', 'round', 'frame', 'previousContinuation']),
+    neg_msg: new Set(['type', 'sessionId', 'windowSeq', 'round', 'frame', 'continuation']),
+    neg_close: new Set(['type', 'sessionId', 'windowSeq', 'round', 'outcome', 'continuation']),
+    ops_offer: new Set(['type', 'sessionId', 'transferId', 'ids']),
+    ops_req: new Set(['type', 'sessionId', 'transferId', 'ids', 'incomplete']),
+    ops_push: new Set(['type', 'sessionId', 'transferId', 'page', 'hasMore', 'operations']),
+    ops_ack: new Set(['type', 'sessionId', 'transferId', 'page', 'incomplete']),
+};
+
+export interface ProtocolPayloadLimits extends OpsPushBatchingOptions {
+    maxIdsPerRequest: number;
+    maxRecordsPerWindow: number;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function utf8Bytes(value: string): number {
+    return Buffer.byteLength(value, 'utf8');
+}
+
+function validateKnownProperties(
+    value: Record<string, unknown>,
+    allowed: ReadonlySet<string>,
+    name: string,
+): string | null {
+    const unknown = Object.keys(value).find(key => !allowed.has(key));
+    return unknown === undefined ? null : `${name} contains unknown property ${unknown}`;
+}
+
+function validateBoundedString(value: unknown, name: string, maxBytes = MAX_PROTOCOL_STRING_BYTES): string | null {
+    if (typeof value !== 'string' || utf8Bytes(value) > maxBytes) {
+        return `${name} must be a string of at most ${maxBytes} UTF-8 bytes`;
+    }
+    return null;
+}
+
+function validateRequiredBoundedString(
+    value: unknown,
+    name: string,
+    maxBytes = MAX_PROTOCOL_STRING_BYTES,
+): string | null {
+    const error = validateBoundedString(value, name, maxBytes);
+    if (error) {
+        return error;
+    }
+    return (value as string).length === 0 ? `${name} must not be empty` : null;
+}
+
+function validateRequiredAsciiToken(value: unknown, name: string): string | null {
+    const error = validateRequiredBoundedString(value, name);
+    if (error) {
+        return error;
+    }
+    return /^[\x20-\x7e]+$/.test(value as string)
+        ? null
+        : `${name} must contain printable ASCII characters only`;
+}
+
+function validateSafeInteger(value: unknown, name: string, minimum = 0): string | null {
+    if (!Number.isSafeInteger(value) || (value as number) < minimum) {
+        return `${name} must be a safe integer >= ${minimum}`;
+    }
+    return null;
+}
+
+function validateCursor(value: unknown, name: string): string | null {
+    if (value === undefined) {
+        return null;
+    }
+    if (!isObject(value)) {
+        return `${name} must be an object`;
+    }
+    return validateKnownProperties(value, new Set(['syncOrder', 'id']), name)
+        ?? validateSafeInteger(value.syncOrder, `${name}.syncOrder`)
+        ?? (typeof value.id !== 'string' || !NEG_SYNC_ID_RE.test(value.id)
+            ? `${name}.id must be 64 hexadecimal characters`
+            : null);
+}
+
+function validateWindowCursor(value: unknown, name: string): string | null {
+    if (!isObject(value)) {
+        return `${name} must be an object`;
+    }
+    return validateKnownProperties(value, new Set(['ts', 'id']), name)
+        ?? validateSafeInteger(value.ts, `${name}.ts`)
+        ?? (typeof value.id !== 'string' || !NEG_SYNC_ID_RE.test(value.id)
+            ? `${name}.id must be 64 hexadecimal characters`
+            : null);
+}
+
+function validateContinuation(value: unknown, name: string, optional: boolean): string | null {
+    if (value === undefined) {
+        return optional ? null : `${name} is required`;
+    }
+    return value === null ? null : validateWindowCursor(value, name);
+}
+
+function validateWindow(value: unknown, maxRecords: number): string | null {
+    if (!isObject(value)) {
+        return 'window must be an object';
+    }
+    const nameError = validateKnownProperties(
+        value,
+        new Set(['until', 'limit', 'after']),
+        'window',
+    );
+    if (nameError) {
+        return nameError;
+    }
+    const untilError = validateSafeInteger(value.until, 'window.until', MDIP_EPOCH_SECONDS);
+    if (untilError) {
+        return untilError;
+    }
+    if (!Number.isSafeInteger(value.limit)
+        || (value.limit as number) <= 0
+        || (value.limit as number) > maxRecords) {
+        return `window.limit must be a safe integer between 1 and ${maxRecords}`;
+    }
+    return value.after === undefined ? null : validateWindowCursor(value.after, 'window.after');
+}
+
+function validateCanonicalBase64(value: string): Buffer | null {
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+        return null;
+    }
+    const decoded = Buffer.from(value, 'base64');
+    return decoded.toString('base64') === value ? decoded : null;
+}
+
+function validateFrame(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return 'frame must be canonical base64';
+    }
+    if (utf8Bytes(value) > Math.ceil(MAX_NEGENTROPY_FRAME_BYTES / 3) * 4) {
+        return `frame exceeds ${MAX_NEGENTROPY_FRAME_BYTES} decoded bytes`;
+    }
+    const decoded = validateCanonicalBase64(value);
+    if (!decoded || decoded.length === 0) {
+        return 'frame must be non-empty canonical base64';
+    }
+    return decoded.length > MAX_NEGENTROPY_FRAME_BYTES
+        ? `frame exceeds ${MAX_NEGENTROPY_FRAME_BYTES} decoded bytes`
+        : null;
+}
+
+function validateOrderedCapability(value: unknown): string | null {
+    if (value === undefined) {
+        return null;
+    }
+    if (!isObject(value)) {
+        return 'ordered must be an object';
+    }
+    const propertyError = validateKnownProperties(value, new Set(['count', 'sourceReady']), 'ordered');
+    if (propertyError) {
+        return propertyError;
+    }
+    const countError = validateSafeInteger(value.count, 'ordered.count');
+    if (countError) {
+        return countError;
+    }
+    if (typeof value.sourceReady !== 'boolean') {
+        return 'ordered.sourceReady must be a boolean';
+    }
+    if (value.sourceReady && value.count === 0) {
+        return 'ordered.sourceReady requires a non-zero count';
+    }
+    return null;
+}
+
+function validatePing(message: Record<string, unknown>): string | null {
+    const versionError = validateSafeInteger(message.version, 'version');
+    if (versionError) {
+        return versionError;
+    }
+    if (message.version !== WIRE_PROTOCOL_VERSION) {
+        return `version must be ${WIRE_PROTOCOL_VERSION}`;
+    }
+    if (message.name !== undefined) {
+        const nameError = validateBoundedString(message.name, 'name');
+        if (nameError) {
+            return nameError;
+        }
+    }
+    if (message.latestTs !== undefined) {
+        const latestTsError = validateSafeInteger(message.latestTs, 'latestTs');
+        if (latestTsError) {
+            return latestTsError;
+        }
+    }
+    if (message.peerDids === undefined) {
+        return validateOrderedCapability(message.ordered);
+    }
+    if (!Array.isArray(message.peerDids) || message.peerDids.length > MAX_ADVERTISED_PEERS) {
+        return `peerDids must be an array of at most ${MAX_ADVERTISED_PEERS} DIDs`;
+    }
+    for (let index = 0; index < message.peerDids.length; index += 1) {
+        const did = message.peerDids[index];
+        if (typeof did !== 'string' || utf8Bytes(did) > MAX_ADVERTISED_DID_BYTES || !isValidDID(did)) {
+            return `peerDids[${index}] must be a valid DID of at most ${MAX_ADVERTISED_DID_BYTES} UTF-8 bytes`;
+        }
+    }
+    return validateOrderedCapability(message.ordered);
+}
+
+function validateSessionEnvelope(message: Record<string, unknown>): string | null {
+    const sessionError = validateRequiredAsciiToken(message.sessionId, 'sessionId');
+    if (sessionError) {
+        return sessionError;
+    }
+    if (message.type === 'ordered_catchup_req'
+        || message.type === 'ordered_catchup_push'
+        || message.type === 'ordered_catchup_done') {
+        return message.type === 'ordered_catchup_push' && typeof message.hasMore !== 'boolean'
+            ? 'hasMore must be a boolean'
+            : null;
+    }
+    if (message.type === 'ops_offer' || message.type === 'ops_req'
+        || message.type === 'ops_push' || message.type === 'ops_ack') {
+        return validateSafeInteger(message.transferId, 'transferId')
+            ?? (message.type === 'ops_push' || message.type === 'ops_ack'
+                ? validateSafeInteger(message.page, 'page')
+                : null);
+    }
+    const sequenceError = validateSafeInteger(message.windowSeq, 'windowSeq')
+        ?? validateSafeInteger(message.round, 'round');
+    if (sequenceError || message.type !== 'neg_close') {
+        return sequenceError;
+    }
+    if (typeof message.outcome !== 'string' || !NEG_CLOSE_OUTCOME_SET.has(message.outcome)) {
+        return `outcome must be one of ${NEG_CLOSE_OUTCOMES.join(', ')}`;
+    }
+    return null;
+}
+
+export function validateHyperMessageEnvelope(
+    value: unknown,
+    deferIncompatiblePingVersion?: number,
+): ProtocolValidationResult<HyperMessage> {
+    if (!isObject(value) || typeof value.type !== 'string' || !MESSAGE_TYPES.has(value.type as HyperMessage['type'])) {
+        return { ok: false, reason: 'unknown or missing message type' };
+    }
+    const incompatiblePing = deferIncompatiblePingVersion !== undefined
+        && value.type === 'ping'
+        && (value.version === undefined
+            || (Number.isSafeInteger(value.version) && value.version !== deferIncompatiblePingVersion));
+    if (incompatiblePing) {
+        return { ok: true, value: value as unknown as PingMessage };
+    }
+    const propertyError = validateKnownProperties(
+        value,
+        MESSAGE_PROPERTIES[value.type as HyperMessage['type']],
+        value.type,
+    );
+    if (propertyError) {
+        return { ok: false, reason: propertyError };
+    }
+    if (value.type === 'ping') {
+        const pingError = validatePing(value);
+        return pingError
+            ? { ok: false, reason: pingError }
+            : { ok: true, value: value as unknown as PingMessage };
+    }
+    if (value.type !== 'queue') {
+        const sessionError = validateSessionEnvelope(value);
+        if (sessionError) {
+            return { ok: false, reason: sessionError };
+        }
+    }
+    return { ok: true, value: value as unknown as HyperMessage };
+}
+
+export function validateQueueMessagePayload(
+    message: QueueMessage,
+    limits: OpsPushBatchingOptions,
+): ProtocolValidationResult<ValidatedOperationPage> {
+    return validateOperationPage(message.operations, limits);
+}
+
+export function validateHyperMessagePayload(
+    message: HyperMessage,
+    limits: ProtocolPayloadLimits,
+): ProtocolValidationResult<ValidatedHyperMessagePayload> {
+    let reason: string | null = null;
+    if (message.type === 'queue') {
+        const result = validateQueueMessagePayload(message, limits);
+        return result.ok ? { ok: true, value: { operationPage: result.value } } : result;
+    }
+    if (message.type === 'ops_push') {
+        if (typeof message.hasMore !== 'boolean') {
+            return { ok: false, reason: 'hasMore must be a boolean' };
+        }
+        const result = validateOperationPage(message.operations, limits);
+        if (!result.ok) {
+            return result;
+        }
+        return message.hasMore && result.value.operations.length === 0
+            ? { ok: false, reason: 'a non-final ops_push page must not be empty' }
+            : { ok: true, value: { operationPage: result.value } };
+    }
+    if (message.type === 'ops_ack') {
+        return message.incomplete === undefined || message.incomplete === true
+            ? { ok: true, value: {} }
+            : { ok: false, reason: 'incomplete must be true when present' };
+    }
+    if (message.type === 'ordered_catchup_push') {
+        if (message.cursor === undefined) {
+            return { ok: false, reason: 'cursor is required' };
+        }
+        reason = validateCursor(message.cursor, 'cursor');
+        if (reason) {
+            return { ok: false, reason };
+        }
+        const result = validateOperationPage(message.operations, limits);
+        if (!result.ok) {
+            return result;
+        }
+        return result.value.operations.length === 0
+            ? { ok: false, reason: 'ordered_catchup_push operations must not be empty' }
+            : { ok: true, value: { operationPage: result.value } };
+    }
+    if (message.type === 'ops_offer') {
+        const result = validateIdList(message.ids, limits.maxIdsPerRequest);
+        if (!result.ok) {
+            return result;
+        }
+        if (result.value.length !== message.ids.length) {
+            return { ok: false, reason: 'ops_offer ids must be unique' };
+        }
+        return message.ids.length === 0
+            ? { ok: false, reason: 'ops_offer ids must not be empty' }
+            : { ok: true, value: {} };
+    }
+    if (message.type === 'ops_req') {
+        const result = validateIdList(message.ids, limits.maxIdsPerRequest);
+        if (!result.ok) {
+            return result;
+        }
+        if (result.value.length !== message.ids.length) {
+            return { ok: false, reason: 'ops_req ids must be unique' };
+        }
+        return message.incomplete === undefined || message.incomplete === true
+            ? { ok: true, value: {} }
+            : { ok: false, reason: 'incomplete must be true when present' };
+    }
+    if (message.type === 'ordered_catchup_req') {
+        reason = validateCursor(message.after, 'after');
+    } else if (message.type === 'neg_open') {
+        reason = validateWindow(message.window, limits.maxRecordsPerWindow)
+            ?? validateFrame(message.frame)
+            ?? validateContinuation(message.previousContinuation, 'previousContinuation', true);
+    } else if (message.type === 'neg_msg') {
+        reason = validateFrame(message.frame)
+            ?? validateContinuation(message.continuation, 'continuation', false);
+    } else if (message.type === 'neg_close') {
+        const continuationOptional = message.outcome === 'busy' || message.outcome === 'incomplete';
+        reason = validateContinuation(message.continuation, 'continuation', continuationOptional);
+    }
+    return reason ? { ok: false, reason } : { ok: true, value: {} };
+}
+
+export function validateOperationContentIds(
+    operations: Operation[],
+    hashProvider: { hashJSON(value: unknown): string },
+): ProtocolValidationResult<Operation[]> {
+    for (let index = 0; index < operations.length; index += 1) {
+        const operation = operations[index];
+        const mapped = mapOperationToSyncKey(operation);
+        if (!mapped.ok) {
+            return { ok: false, reason: `operation at index ${index}: ${mapped.reason}` };
+        }
+        if (!hasContentVerifiedOperationId(operation, hashProvider)) {
+            return { ok: false, reason: `operation at index ${index} has a content ID mismatch` };
+        }
+    }
+    return { ok: true, value: operations };
+}

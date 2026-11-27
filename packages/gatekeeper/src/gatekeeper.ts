@@ -26,8 +26,17 @@ import {
     CheckDIDsResult,
     ImportBatchResult,
     ProcessEventsResult,
+    QueueReadOptions,
     VerifyDbResult,
     Signature,
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+    QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT,
+} from './types.js';
+export {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+    QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT,
 } from './types.js';
 import {
     generateDIDFromOperation,
@@ -60,8 +69,6 @@ enum ImportStatus {
 
 const MAX_PENDING_EVENT_COUNT = 10_000;
 const MAX_PENDING_EVENT_BYTES = 64 * 1024 * 1024;
-const MAX_EVENT_PAGE_COUNT = 300;
-const MAX_EVENT_PAGE_BYTES = 512 * 1024;
 // A full operation page needs bounded headroom for canonical DID/opid envelope fields.
 const MAX_TRANSIENT_EVENT_BYTES = 1280 * 1024;
 // Longer controller chains stay valid but use one conservative mutation watch.
@@ -121,8 +128,8 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     private maxPendingEventCount = MAX_PENDING_EVENT_COUNT;
     private maxPendingEventBytes = MAX_PENDING_EVENT_BYTES;
-    private maxEventPageCount = MAX_EVENT_PAGE_COUNT;
-    private maxEventPageBytes = MAX_EVENT_PAGE_BYTES;
+    private maxEventPageCount = MAX_OPERATION_PAGE_COUNT;
+    private maxEventPageBytes = MAX_OPERATION_PAGE_BYTES;
     private maxTransientEventBytes = MAX_TRANSIENT_EVENT_BYTES;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
@@ -2126,16 +2133,45 @@ export default class Gatekeeper implements GatekeeperInterface {
         return events.sort((a, b) => new Date(a.operation.signature?.signed ?? 0).getTime() - new Date(b.operation.signature?.signed ?? 0).getTime());
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
+    async getQueue(registry: string, options: QueueReadOptions = {}): Promise<Operation[]> {
         if (!ValidRegistries.includes(registry)) {
             throw new InvalidParameterError(`registry=${registry}`);
+        }
+
+        const limit = options.limit ?? MAX_OPERATION_PAGE_COUNT;
+        const maxBytes = options.maxBytes ?? MAX_OPERATION_PAGE_BYTES;
+        for (const [name, value, maximum] of [
+            ['limit', limit, MAX_OPERATION_PAGE_COUNT],
+            ['maxBytes', maxBytes, MAX_OPERATION_PAGE_BYTES],
+        ] as const) {
+            if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+                throw new InvalidParameterError(`${name}=${value}`);
+            }
         }
 
         if (!this.supportedRegistries.includes(registry)) {
             this.supportedRegistries.push(registry);
         }
 
-        return this.db.getQueue(registry);
+        const queue = await this.db.getQueue(registry, limit);
+        const page: Operation[] = [];
+        let bytes = 2;
+        for (const operation of queue) {
+            if (page.length >= limit) break;
+            const operationBytes = Buffer.byteLength(JSON.stringify(operation), 'utf8');
+            const pageBytes = bytes + operationBytes + (page.length > 0 ? 1 : 0);
+            if (pageBytes > maxBytes && page.length === 0) {
+                const error = new Error(QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT) as Error & { code: string };
+                error.code = QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT;
+                throw error;
+            }
+            if (pageBytes > maxBytes) {
+                break;
+            }
+            page.push(operation);
+            bytes = pageBytes;
+        }
+        return page;
     }
 
     async clearQueue(registry: string, events: Operation[] | string[], expectedIndexEpoch?: string): Promise<boolean> {

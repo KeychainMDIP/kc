@@ -32,6 +32,7 @@ public interface GatekeeperInterface {
     ImportBatchResult importBatch(List<GatekeeperEvent> batch);
     ProcessEventsResult processEvents();
     List<Operation> getQueue(String registry);
+    List<Operation> getQueue(String registry, Integer limit, Integer maxBytes);
     boolean clearQueue(String registry, List<?> eventsOrHashes);
     String addData(byte[] data);
     byte[] getData(String cid);

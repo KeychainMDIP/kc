@@ -37,6 +37,7 @@ export interface MediatorDriverOptions {
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
     frameSizeLimit?: number;
+    negentropyIntervalSeconds?: number;
 }
 
 export type MediatorTranscriptEntry = RecordedTransportWrite;
@@ -383,13 +384,11 @@ function trackNodeWork(
     store: InMemoryOperationSyncStore,
     tracker: CallTracker,
 ): NodeWork {
-    const readSorted = store.iterateSorted.bind(store);
     const readOrdered = store.iterateOrdered.bind(store);
     const readCount = store.count.bind(store);
     const readOrderedCount = store.countOrdered.bind(store);
     const upsertMany = store.upsertMany.bind(store);
     const iterateSortedKeys = store.iterateSortedKeys.bind(store);
-    const iterateSorted = store.iterateSorted.bind(store);
     const iterateOrdered = store.iterateOrdered.bind(store);
     const getByIds = store.getByIds.bind(store);
     const count = store.count.bind(store);
@@ -402,7 +401,6 @@ function trackNodeWork(
 
     jest.spyOn(store, 'upsertMany').mockImplementation(tracker.wrap(`${nodeId}.syncStore.upsertMany`, upsertMany));
     jest.spyOn(store, 'iterateSortedKeys').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSortedKeys`, iterateSortedKeys));
-    jest.spyOn(store, 'iterateSorted').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateSorted`, iterateSorted));
     jest.spyOn(store, 'iterateOrdered').mockImplementation(tracker.wrap(`${nodeId}.syncStore.iterateOrdered`, iterateOrdered));
     jest.spyOn(store, 'getByIds').mockImplementation(tracker.wrap(`${nodeId}.syncStore.getByIds`, getByIds));
     jest.spyOn(store, 'count').mockImplementation(tracker.wrap(`${nodeId}.syncStore.count`, count));
@@ -415,17 +413,18 @@ function trackNodeWork(
 
     return {
         async readSummary(): Promise<NodeSummary> {
-            const [events, rows, orderedRows, countValue, orderedCountValue] = await Promise.all([
+            const [events, sortedKeys, orderedRows, countValue, orderedCountValue] = await Promise.all([
                 node.gatekeeper.exportBatch(),
-                readSorted({ limit: Number.MAX_SAFE_INTEGER }),
+                iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }),
                 readOrdered({ limit: Number.MAX_SAFE_INTEGER }),
                 readCount(),
                 readOrderedCount(),
             ]);
+            const rows = await getByIds(sortedKeys.map(row => row.id));
             const gatekeeperOperations = events.map(event => event.operation);
             const gatekeeperIds = operationIds(gatekeeperOperations);
             const storeIds = normalizeIds(rows.map(row => row.id));
-            const cursors = rows.map(row => ({ ts: row.ts, id: row.id }));
+            const cursors = rows.map(row => ({ ts: row.signedTs, id: row.id }));
             const orderedCursors = orderedRows.map(row => ({
                 syncOrder: row.syncOrder!,
                 id: row.id,
@@ -451,8 +450,8 @@ function trackNodeWork(
                     sample: sampleIds(storeIds),
                     cursors,
                     orderedCursors,
-                    firstCursor: first ? { ts: first.ts, id: first.id } : null,
-                    lastCursor: last ? { ts: last.ts, id: last.id } : null,
+                    firstCursor: first ? { ts: first.signedTs, id: first.id } : null,
+                    lastCursor: last ? { ts: last.signedTs, id: last.id } : null,
                     lastOrderedCursor: lastOrdered?.syncOrder !== undefined
                         ? { syncOrder: lastOrdered.syncOrder, id: lastOrdered.id }
                         : null,
@@ -505,6 +504,7 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
     const env = {
         KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: String(maxRecordsPerWindow),
         KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: String(maxRoundsPerSession),
+        KC_HYPR_NEGENTROPY_INTERVAL: String(options.negentropyIntervalSeconds ?? 300),
     };
     let nodeA: MediatorNode | null = null;
     let nodeB: MediatorNode | null = null;
@@ -638,12 +638,9 @@ export async function createMediatorDriver(options: MediatorDriverOptions) {
                 quiescent = false;
                 const createConnectionOverrides = () => source === 'periodic'
                     ? {
-                        capabilities: normalizePeerCapabilities({
-                            negentropy: true,
-                            negentropyVersion: 1,
-                            orderedCatchup: false,
-                        }),
-                        syncMode: 'negentropy',
+                        wireVersion: 2,
+                        capabilities: normalizePeerCapabilities(),
+                        initialPingReceived: true,
                     }
                     : {};
                 nodeA!.run(() => nodeA!.mediator.__test.addConnection(peerKeyB, {

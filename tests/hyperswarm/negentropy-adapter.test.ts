@@ -1,8 +1,10 @@
 import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/db/memory.ts';
 import NegentropyAdapter from '../../services/mediators/hyperswarm/src/negentropy/adapter.ts';
-import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/negentropy/windows.ts';
+import { MAX_NEGENTROPY_FRAME_BYTES } from '../../services/mediators/hyperswarm/src/protocol-limits.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import { Operation } from '@mdip/gatekeeper/types';
-import type { OperationSyncStore, SyncOperationRecord, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
+import type { OperationSyncStore, SyncStoreCursor, SyncStoreListOptions } from '../../services/mediators/hyperswarm/src/db/types.ts';
+import { jest } from '@jest/globals';
 
 const DAY_SECONDS = 24 * 60 * 60;
 const h = (c: string) => c.repeat(64);
@@ -40,7 +42,7 @@ async function seedStore(
     await store.reset();
     await store.upsertMany(records.map(item => ({
         id: item.id,
-        ts: item.ts,
+        signedTs: item.ts,
         operation: item.op,
     })));
 }
@@ -76,6 +78,7 @@ describe('NegentropyAdapter', () => {
 
         expect(adapter.getLastWindowStats()).toBeNull();
         expect(adapter.getLastSessionStats()).toBeNull();
+        expect(adapter.getCurrentSnapshot()).toBeNull();
     });
 
     it('loads and builds from store', async () => {
@@ -110,7 +113,7 @@ describe('NegentropyAdapter', () => {
             keyReads += 1;
             return iterateSortedKeys(options);
         };
-        store.iterateSorted = async () => {
+        store.getByIds = async () => {
             throw new Error('full records must not be loaded');
         };
 
@@ -134,7 +137,7 @@ describe('NegentropyAdapter', () => {
             syncStore: store,
         });
 
-        expect(adapter.getStats().frameSizeLimit).toBe(0);
+        expect(adapter.getStats().frameSizeLimit).toBe(MAX_NEGENTROPY_FRAME_BYTES);
     });
 
     it('sets wantUint8ArrayOutput on the underlying negentropy instance', async () => {
@@ -146,7 +149,6 @@ describe('NegentropyAdapter', () => {
         const adapter = await NegentropyAdapter.create({
             syncStore: store,
             frameSizeLimit: 0,
-            wantUint8ArrayOutput: true,
         });
 
         const snapshot = adapter.getCurrentSnapshot();
@@ -182,7 +184,7 @@ describe('NegentropyAdapter', () => {
             frameSizeLimit: 0,
         });
 
-        let msg: string | Uint8Array | null = await adapterA.initiate();
+        let msg: Uint8Array | null = await adapterA.initiate();
         const have = new Set<string>();
         const need = new Set<string>();
 
@@ -194,10 +196,10 @@ describe('NegentropyAdapter', () => {
             const round = await adapterA.reconcile(response);
 
             for (const id of round.haveIds) {
-                have.add(String(id));
+                have.add(typeof id === 'string' ? id : Buffer.from(id).toString('hex'));
             }
             for (const id of round.needIds) {
-                need.add(String(id));
+                need.add(typeof id === 'string' ? id : Buffer.from(id).toString('hex'));
             }
 
             msg = round.nextMsg;
@@ -245,7 +247,7 @@ describe('NegentropyAdapter', () => {
         });
 
         await expect(adapter.initiate()).rejects.toThrow('not initialized');
-        await expect(adapter.reconcile('msg')).rejects.toThrow('not initialized');
+        await expect(adapter.reconcile(Buffer.from('msg'))).rejects.toThrow('not initialized');
     });
 
     it('returns null earliest timestamp for an empty store', async () => {
@@ -264,11 +266,10 @@ describe('NegentropyAdapter', () => {
     it('skips invalid sync rows when rebuilding a window', async () => {
         const validId = h('a');
         const validTs = toEpochSeconds('2026-02-13T00:00:00.000Z');
-        const validOp = makeOp('a', '2026-02-13T00:00:00.000Z');
-        const rows: SyncOperationRecord[] = [
-            { id: 'invalid-id', ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 1 },
-            { id: validId, ts: Number.NaN, signedTs: validTs, operation: validOp, insertedAt: 2 },
-            { id: validId, ts: validTs, signedTs: validTs, operation: validOp, insertedAt: 3 },
+        const rows: SyncStoreCursor[] = [
+            { id: 'invalid-id', ts: validTs },
+            { id: validId, ts: Number.NaN },
+            { id: validId, ts: validTs },
         ];
 
         const stubStore: OperationSyncStore = {
@@ -279,6 +280,7 @@ describe('NegentropyAdapter', () => {
             upsertMany: async () => ({ inserted: 0, updated: 0 }),
             applySyncPage: async () => ({ inserted: 0, updated: 0, deleted: 0 }),
             loadSyncState: async () => null,
+            loadSyncStateByPrefix: async () => [],
             saveSyncState: async () => undefined,
             getByIds: async () => [],
             has: async () => false,
@@ -286,12 +288,6 @@ describe('NegentropyAdapter', () => {
             countOrdered: async () => 0,
             getLatestSignedTimestamp: async () => validTs,
             iterateSortedKeys: async (options: SyncStoreListOptions = {}) => {
-                if (options.after) {
-                    return [];
-                }
-                return rows.map(({ id, ts }) => ({ id, ts }));
-            },
-            iterateSorted: async (options: SyncStoreListOptions = {}) => {
                 if (options.after) {
                     return [];
                 }
@@ -426,12 +422,12 @@ describe('NegentropyAdapter', () => {
     });
 
     it('does not let skipped rows consume capped window capacity', async () => {
-        const rows = [
-            { id: 'not-a-sync-id', ts: 1000, signedTs: 1000, operation: makeOp('a', '2026-02-09T10:00:00.000Z'), insertedAt: 0 },
-            { id: h('b'), ts: 2000, signedTs: 2000, operation: makeOp('b', '2026-02-09T11:00:00.000Z'), insertedAt: 0 },
-            { id: h('c'), ts: Number.NaN, signedTs: 3000, operation: makeOp('c', '2026-02-09T12:00:00.000Z'), insertedAt: 0 },
-            { id: h('d'), ts: 4000, signedTs: 4000, operation: makeOp('d', '2026-02-09T13:00:00.000Z'), insertedAt: 0 },
-            { id: h('e'), ts: 5000, signedTs: 5000, operation: makeOp('e', '2026-02-09T14:00:00.000Z'), insertedAt: 0 },
+        const rows: SyncStoreCursor[] = [
+            { id: 'not-a-sync-id', ts: 1000 },
+            { id: h('b'), ts: 2000 },
+            { id: h('c'), ts: Number.NaN },
+            { id: h('d'), ts: 4000 },
+            { id: h('e'), ts: 5000 },
         ];
 
         const stubStore: OperationSyncStore = {
@@ -442,6 +438,7 @@ describe('NegentropyAdapter', () => {
             async upsertMany() { return { inserted: 0, updated: 0 }; },
             async applySyncPage() { return { inserted: 0, updated: 0, deleted: 0 }; },
             async loadSyncState() { return null; },
+            async loadSyncStateByPrefix() { return []; },
             async saveSyncState() {},
             async getByIds() { return []; },
             async has() { return false; },
@@ -449,12 +446,6 @@ describe('NegentropyAdapter', () => {
             async countOrdered() { return 0; },
             async getLatestSignedTimestamp() { return 5000; },
             async iterateSortedKeys(options: SyncStoreListOptions = {}) {
-                if (options.after) {
-                    return [];
-                }
-                return rows.map(({ id, ts }) => ({ id, ts }));
-            },
-            async iterateSorted(options: SyncStoreListOptions = {}) {
                 if (options.after) {
                     return [];
                 }
@@ -766,7 +757,12 @@ describe('NegentropyAdapter', () => {
             deferInitialBuild: true,
         });
 
-        (adapterB as any).respond = async () => null;
+        const createPeerEngine = adapterB.createEngineForSnapshot.bind(adapterB);
+        jest.spyOn(adapterB, 'createEngineForSnapshot').mockImplementation(snapshot => {
+            const engine = createPeerEngine(snapshot);
+            jest.spyOn(engine, 'respond').mockResolvedValue(null);
+            return engine;
+        });
 
         const session = await adapterA.runWindowedSessionWithPeer(adapterB, {
             nowTs,

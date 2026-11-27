@@ -4,7 +4,10 @@ import DbJsonMemory from '@mdip/gatekeeper/db/json-memory.ts';
 import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import { compareSyncCursor } from '../../services/mediators/hyperswarm/src/negentropy/cursor.ts';
-import { mapOperationToSyncKey } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
+import {
+    mapOperationToSyncKey,
+    MDIP_EPOCH_SECONDS,
+} from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 import {
     decodeFramedMessages,
     encodeFramedMessage,
@@ -24,8 +27,10 @@ jest.setTimeout(60_000);
 const NEGENTROPY_MESSAGE_TYPES = new Set([
     'neg_open',
     'neg_msg',
+    'ops_offer',
     'ops_req',
     'ops_push',
+    'ops_ack',
     'neg_close',
 ]);
 
@@ -35,26 +40,22 @@ interface Cursor {
 }
 
 interface WireWindow {
-    name: string;
-    fromTs: number;
-    toTs: number;
-    maxRecords: number;
-    order: number;
+    until: number;
+    limit: number;
     after?: Cursor;
 }
 
 interface WireBody {
     type: string;
     sessionId?: string;
-    windowId?: string;
-    reason?: string;
+    windowSeq?: number;
+    round?: number;
+    outcome?: string;
     window?: WireWindow;
-    windowProgress?: {
-        cappedByRecords?: boolean;
-        lastCursor?: Cursor;
-    };
+    continuation?: Cursor | null;
+    previousContinuation?: Cursor | null;
     ids?: string[];
-    data?: Operation[];
+    operations?: Operation[];
 }
 
 interface WireMessage {
@@ -67,9 +68,11 @@ type ScenarioName =
     | 'identical'
     | 'partial overlap'
     | 'fully disjoint'
+    | 'disjoint exact limit'
     | 'interleaved capped pages'
     | 'same-second exact cap'
     | 'same-second cap-plus-one'
+    | 'known capped overlap'
     | 'local-only continuation cursor'
     | 'peer-only older history'
     | 'future timestamp pages';
@@ -307,13 +310,13 @@ function snapshotCappedCursor(
     const cursors = Array.from(expectedCursors)
         .filter(cursor => (
             knownIds.has(cursor.id)
-            && cursor.ts >= window.fromTs
-            && cursor.ts <= window.toTs
+            && cursor.ts >= MDIP_EPOCH_SECONDS
+            && cursor.ts <= window.until
             && (!window.after || compareSyncCursor(cursor, window.after) > 0)
         ))
         .sort(compareSyncCursor);
-    return cursors.length > window.maxRecords
-        ? cursors[window.maxRecords - 1]
+    return cursors.length > window.limit
+        ? cursors[window.limit - 1]
         : undefined;
 }
 
@@ -335,7 +338,11 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
     const messages = decodeWire(link).filter(message => NEGENTROPY_MESSAGE_TYPES.has(message.body.type));
     const opens = messages.filter(message => message.body.type === 'neg_open');
     expect(opens.length).toBeGreaterThan(0);
-    expect(opens[0].body.window).toMatchObject({ order: 0 });
+    expect(opens[0].body.window).toMatchObject({
+        until: expect.any(Number),
+        limit: expect.any(Number),
+    });
+    expect(opens[0].body.windowSeq).toBe(0);
     expect(opens[0].body.window?.after).toBeUndefined();
     const initiatorDirection = link.connectionB.remotePublicKey.compare(link.connectionA.remotePublicKey) < 0
         ? 'a-to-b'
@@ -359,22 +366,22 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             .flatMap(delivery => delivery.writeSequences),
     );
     const seenWindowTuples = new Set<string>();
-    const initiatorSnapshotCursors = new Map<string, Cursor | undefined>();
-    let currentWindowId: string | null = null;
+    const initiatorSnapshotCursors = new Map<number, Cursor | undefined>();
+    let currentWindowSeq: number | null = null;
     let currentWindow: WireWindow | null = null;
     for (const message of messages) {
         expect(message.body.sessionId).toBe(opens[0].body.sessionId);
-        expect(message.body.windowId).toEqual(expect.any(String));
-        const windowId = message.body.windowId!;
 
         if (message.body.type === 'neg_open') {
+            expect(message.body.windowSeq).toEqual(expect.any(Number));
+            const windowSeq = message.body.windowSeq!;
             expect(message.body.window).toBeDefined();
             const nextWindow = message.body.window!;
-            if (currentWindow && nextWindow.order > currentWindow.order && nextWindow.after) {
+            if (currentWindow && message.body.windowSeq! > currentWindowSeq! && nextWindow.after) {
                 const requiredIds = Array.from(expectedCursors.values())
                     .filter(cursor => (
-                        cursor.ts >= nextWindow.fromTs
-                        && cursor.ts <= nextWindow.toTs
+                        cursor.ts >= MDIP_EPOCH_SECONDS
+                        && cursor.ts <= nextWindow.until
                         && compareSyncCursor(cursor, nextWindow.after!) <= 0
                     ))
                     .map(cursor => cursor.id);
@@ -384,33 +391,30 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
             const tuple = JSON.stringify(nextWindow);
             expect(seenWindowTuples.has(tuple)).toBe(false);
             seenWindowTuples.add(tuple);
-            initiatorSnapshotCursors.set(windowId, snapshotCappedCursor(
+            initiatorSnapshotCursors.set(windowSeq, snapshotCappedCursor(
                 message.direction === 'a-to-b' ? knownA : knownB,
                 expectedCursors.values(),
                 nextWindow,
             ));
-            currentWindowId = windowId;
+            currentWindowSeq = windowSeq;
             currentWindow = nextWindow;
         }
-        else {
-            expect(currentWindowId).not.toBeNull();
-            expect(windowId).toBe(currentWindowId);
+        else if (message.body.type === 'neg_msg' || message.body.type === 'neg_close') {
+            expect(currentWindowSeq).not.toBeNull();
+            expect(message.body.windowSeq).toBe(currentWindowSeq);
         }
 
-        const progress = message.body.windowProgress;
-        if (progress?.cappedByRecords) {
-            expect(progress.lastCursor).toBeDefined();
-        }
-        if (progress?.lastCursor) {
+        const continuation = message.body.continuation;
+        if (continuation) {
             expect(currentWindow).not.toBeNull();
             if (currentWindow!.after) {
-                expect(compareSyncCursor(progress.lastCursor, currentWindow!.after)).toBeGreaterThanOrEqual(0);
+                expect(compareSyncCursor(continuation, currentWindow!.after)).toBeGreaterThanOrEqual(0);
             }
         }
 
         if (message.body.type === 'ops_push' && deliveredWriteSequences.has(message.sequence)) {
             const receiver = message.direction === 'a-to-b' ? knownB : knownA;
-            for (const operation of message.body.data ?? []) {
+            for (const operation of message.body.operations ?? []) {
                 receiver.add(operationCursor(operation).id);
             }
         }
@@ -421,7 +425,7 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         expect(messages.some(message => (
             message.direction === responseDirection
             && message.body.sessionId === open.body.sessionId
-            && message.body.windowId === open.body.windowId
+            && message.body.windowSeq === open.body.windowSeq
             && (message.body.type === 'neg_msg' || message.body.type === 'neg_close')
         ))).toBe(true);
     }
@@ -430,40 +434,38 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
     for (let index = 1; index < opens.length; index += 1) {
         const previous = opens[index - 1].body.window!;
         const next = opens[index].body.window!;
-        expect(next.name).toBe(previous.name);
-        expect(next.fromTs).toBe(previous.fromTs);
-        expect(next.toTs).toBe(previous.toTs);
+        expect(next.until).toBe(previous.until);
+        expect(opens[index].body.windowSeq).toBe(opens[index - 1].body.windowSeq! + 1);
 
-        if (next.order === previous.order) {
-            expect(sameCursor(next.after, previous.after)).toBe(true);
-            expect(next.maxRecords).toBeLessThan(previous.maxRecords);
+        if (sameCursor(next.after, previous.after)) {
+            expect(next.limit).toBeLessThan(previous.limit);
             continue;
         }
 
-        expect(next.order).toBe(previous.order + 1);
-        expect(next.maxRecords).toBe(previous.maxRecords);
+        expect(next.limit).toBe(previous.limit);
         expect(next.after).toBeDefined();
         if (previous.after) {
             expect(compareSyncCursor(next.after!, previous.after)).toBeGreaterThan(0);
         }
 
-        const previousWindowId = opens[index - 1].body.windowId;
+        const previousOpen = opens[index - 1];
+        const previousWindowSeq = previousOpen.body.windowSeq;
         const observedCursors = messages.flatMap(message => {
-            if (message.sequence >= opens[index].sequence
-                || message.body.windowId !== previousWindowId
+            if (message.sequence < previousOpen.sequence
+                || message.sequence >= opens[index].sequence
                 || !deliveredWriteSequences.has(message.sequence)) {
                 return [];
             }
-            const progressCursor = message.body.windowProgress?.lastCursor;
+            const progressCursor = message.body.continuation ?? undefined;
             const pushedCursors = message.body.type === 'ops_push'
-                ? (message.body.data ?? []).map(operationCursor)
+                ? (message.body.operations ?? []).map(operationCursor)
                 : [];
             return [...(progressCursor ? [progressCursor] : []), ...pushedCursors];
         });
         expect(observedCursors.length).toBeGreaterThan(0);
         const matchesObservedCursor = observedCursors.some(cursor => sameCursor(cursor, next.after));
         const matchesLocalCursor = sameCursor(
-            initiatorSnapshotCursors.get(previousWindowId!),
+            initiatorSnapshotCursors.get(previousWindowSeq!),
             next.after,
         );
         expect(matchesObservedCursor || matchesLocalCursor).toBe(true);
@@ -478,8 +480,8 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
         body: {
             type: 'neg_close',
             sessionId: opens[0].body.sessionId,
-            windowId: currentWindowId,
-            reason: 'complete',
+            windowSeq: currentWindowSeq,
+            outcome: 'complete',
         },
     });
 
@@ -489,10 +491,11 @@ function assertWindowProtocol(link: RecordingDuplexPair, knowledge: WireKnowledg
 function assertNoOperationTransfer(link: RecordingDuplexPair): void {
     const messages = decodeWire(link);
     expect(messages.filter(message => message.body.type === 'ops_req').flatMap(message => message.body.ids ?? [])).toEqual([]);
-    expect(messages.filter(message => message.body.type === 'ops_push').flatMap(message => message.body.data ?? [])).toEqual([]);
+    expect(messages.filter(message => message.body.type === 'ops_push')
+        .flatMap(message => message.body.operations ?? [])).toEqual([]);
     expect(messages
-        .filter(message => message.body.type === 'batch' || message.body.type === 'queue')
-        .flatMap(message => message.body.data ?? [])).toEqual([]);
+        .filter(message => message.body.type === 'queue')
+        .flatMap(message => message.body.operations ?? [])).toEqual([]);
 }
 
 function uniqueOperations(operations: Operation[]): Operation[] {
@@ -511,10 +514,8 @@ async function assertConverged(
     const historyA = uniqueOperations((await currentDriver.nodeA.gatekeeper.exportBatch()).map(event => event.operation));
     const historyB = uniqueOperations((await currentDriver.nodeB.gatekeeper.exportBatch()).map(event => event.operation));
     const expectedCursors = expectedHistory.map(operationCursor).sort(compareSyncCursor);
-    const cursorsA = (await currentDriver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-        .map(row => ({ ts: row.ts, id: row.id }));
-    const cursorsB = (await currentDriver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-        .map(row => ({ ts: row.ts, id: row.id }));
+    const cursorsA = await currentDriver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
+    const cursorsB = await currentDriver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
 
     expect(operationIds(historyA)).toStrictEqual(expectedIds);
     expect(operationIds(historyB)).toStrictEqual(expectedIds);
@@ -564,6 +565,20 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
         const operations = await createIndependentOperations([baseTime, baseTime + 1_000, baseTime + 2_000, baseTime + 3_000]);
         return { operationsA: operations.slice(0, 2), operationsB: operations.slice(2), maxRecordsPerWindow: 8, expectContinuation: false };
     }
+    if (name === 'disjoint exact limit') {
+        const operations = await createIndependentOperations([
+            baseTime,
+            baseTime + 1_000,
+            baseTime + 2_000,
+            baseTime + 3_000,
+        ]);
+        return {
+            operationsA: [operations[0], operations[2]],
+            operationsB: [operations[1], operations[3]],
+            maxRecordsPerWindow: 2,
+            expectContinuation: true,
+        };
+    }
     if (name === 'interleaved capped pages') {
         const operations = await createIndependentOperations(Array.from({ length: 16 }, (_value, index) => baseTime + (index * 1_000)));
         return {
@@ -589,6 +604,19 @@ async function createConvergenceScenario(name: ScenarioName): Promise<Convergenc
             maxRecordsPerWindow: 4,
             expectContinuation: true,
             knownOutsideId: operationCursor(operations[4]).id,
+        };
+    }
+    if (name === 'known capped overlap') {
+        const operations = await createIndependentOperations(Array.from(
+            { length: 5 },
+            (_value, index) => baseTime + (index * 1_000),
+        ));
+        return {
+            operationsA: operations.slice(0, 4),
+            operationsB: [operations[0], operations[3], operations[4]],
+            maxRecordsPerWindow: 2,
+            expectContinuation: true,
+            knownOutsideId: operationCursor(operations[3]).id,
         };
     }
     if (name === 'local-only continuation cursor') {
@@ -757,9 +785,9 @@ describe('hyperswarm mediator behavior', () => {
 
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(idsB);
-        expect((await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        expect((await driver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }))
             .map(row => row.id).sort()).toStrictEqual(unionIds);
-        expect((await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
+        expect((await driver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER }))
             .map(row => row.id).sort()).toStrictEqual(unionIds);
         expect(await driver.storeA.countOrdered()).toBe(unionIds.length);
         expect(await driver.storeB.countOrdered()).toBe(unionIds.length);
@@ -768,11 +796,8 @@ describe('hyperswarm mediator behavior', () => {
         expect((await driver.storeB.getByIds([fixtures.branchA.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();
@@ -799,6 +824,7 @@ describe('hyperswarm mediator behavior', () => {
         driver = await createMediatorDriver({
             operationsA,
             operationsB,
+            negentropyIntervalSeconds: 1,
             syncOrderByIdA: new Map(operationsA.map((operation, index) => [
                 operation.signature!.hash,
                 index + 1,
@@ -814,6 +840,25 @@ describe('hyperswarm mediator behavior', () => {
         };
 
         await driver.startSync();
+        await driver.driveUntilQuiescent({
+            a: {
+                gatekeeper: idsA,
+                store: operationIds([...operationsA, fixtures.branchB]),
+            },
+            b: {
+                gatekeeper: idsB,
+                store: operationIds([...operationsB, fixtures.branchA]),
+            },
+        }, { timeoutMs: 10_000 });
+        expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'incomplete' }),
+        }));
+
+        await new Promise(resolve => setTimeout(resolve, 1_100));
+        const peerKeyA = driver.nodeA.publicKey.toString('hex');
+        const peerKeyB = driver.nodeB.publicKey.toString('hex');
+        await driver.nodeA.run(() => driver!.nodeA.mediator.__test.maybeStartPeerSync(peerKeyB, 'periodic'));
+        await driver.nodeB.run(() => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'periodic'));
         await driver.driveUntilQuiescent(expected, { timeoutMs: 10_000 });
 
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(idsA);
@@ -831,11 +876,8 @@ describe('hyperswarm mediator behavior', () => {
                 .toBe(Number.MAX_SAFE_INTEGER);
         }
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();
@@ -893,11 +935,8 @@ describe('hyperswarm mediator behavior', () => {
         expect((await driver.storeB.getByIds([fixtures.deactivation.signature!.hash]))[0].syncOrder)
             .toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport)).toContainEqual(expect.objectContaining({
-            body: expect.objectContaining({ type: 'neg_close', reason: 'complete' }),
+            body: expect.objectContaining({ type: 'neg_close', outcome: 'complete' }),
         }));
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
-        ))).toBe(false);
 
         await driver.reconnect();
         await driver.startSync();
@@ -913,9 +952,11 @@ describe('hyperswarm mediator behavior', () => {
             'identical',
             'partial overlap',
             'fully disjoint',
+            'disjoint exact limit',
             'interleaved capped pages',
             'same-second exact cap',
             'same-second cap-plus-one',
+            'known capped overlap',
             'local-only continuation cursor',
             'peer-only older history',
             'future timestamp pages',
@@ -955,7 +996,7 @@ describe('hyperswarm mediator behavior', () => {
             if (scenarioName === 'future timestamp pages') {
                 const expectedToTs = Math.max(...union.map(operation => operationCursor(operation).ts));
                 expect(opens.length).toBeGreaterThan(1);
-                expect(opens.every(open => open.body.window?.toTs === expectedToTs)).toBe(true);
+                expect(opens.every(open => open.body.window?.until === expectedToTs)).toBe(true);
             }
             if (scenarioName === 'same-second exact cap') {
                 expect(opens).toHaveLength(1);
@@ -965,9 +1006,10 @@ describe('hyperswarm mediator behavior', () => {
                 const responderDirection: TransportDirection = aInitiates ? 'b-to-a' : 'a-to-b';
                 const responderProgress = firstMessages.flatMap(message => (
                     message.direction === responderDirection
-                    && message.body.windowId === opens[0].body.windowId
-                    && message.body.windowProgress
-                        ? [message.body.windowProgress.cappedByRecords]
+                    && message.body.windowSeq === opens[0].body.windowSeq
+                    && (message.body.type === 'neg_msg' || message.body.type === 'neg_close')
+                    && Object.prototype.hasOwnProperty.call(message.body, 'continuation')
+                        ? [message.body.continuation !== null]
                         : []
                 ));
 
@@ -978,12 +1020,14 @@ describe('hyperswarm mediator behavior', () => {
                 assertNoOperationTransfer(firstLink);
             }
             if (scenario.knownOutsideId) {
-                const pushedIds = firstMessages
-                    .filter(message => message.body.type === 'ops_push')
-                    .flatMap(message => message.body.data ?? [])
-                    .map(operation => operationCursor(operation).id);
-                expect(pushedIds).toContain(scenario.knownOutsideId);
+                const requestedIds = firstMessages
+                    .filter(message => message.body.type === 'ops_req')
+                    .flatMap(message => message.body.ids ?? []);
+                if (publicKeyA.compare(publicKeyB) < 0) {
+                    expect(requestedIds).toContain(scenario.knownOutsideId);
+                }
                 expect(importedOperationIds(driver.nodeA)).not.toContain(scenario.knownOutsideId);
+                expect(importedOperationIds(driver.nodeB)).not.toContain(scenario.knownOutsideId);
             }
             await assertConverged(driver, union);
 
@@ -998,60 +1042,6 @@ describe('hyperswarm mediator behavior', () => {
             assertNoOperationTransfer(driver.transport);
             await assertConverged(driver, union);
         });
-    });
-
-    it('rechecks a proven operation when it reappears in a continuation window', async () => {
-        const operations = await createIndependentOperations([
-            Date.now() - (60 * 60 * 1_000),
-            Date.now() - (59 * 60 * 1_000),
-        ]);
-        const expectedIds = operationIds(operations);
-        driver = await createMediatorDriver({
-            operationsA: operations,
-            operationsB: [],
-            maxRecordsPerWindow: 1,
-            publicKeyA: Buffer.alloc(32, 0x22),
-            publicKeyB: Buffer.alloc(32, 0x11),
-        });
-
-        await driver.startSync();
-        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const firstPush = decodeWire(driver.transport)
-            .filter(message => message.body.type === 'ops_push')
-            .at(-1);
-        const firstOperation = firstPush?.body.data?.[0];
-        if (!firstOperation) {
-            throw new Error('first capped window did not send an operation');
-        }
-        expect(await driver.transport.deliverNext()).toBe(true);
-
-        await pumpUntilPendingMessage(driver.transport, 'b-to-a', 'neg_open');
-        const continuationOpen = decodeWire(driver.transport)
-            .filter(message => message.body.type === 'neg_open')
-            .at(-1);
-        expect(continuationOpen?.body.window?.order).toBe(1);
-        expect(await driver.transport.deliverNext()).toBe(true);
-
-        const continuationResponse = driver.transport.peekNext();
-        if (!continuationResponse || continuationResponse.direction !== 'a-to-b') {
-            throw new Error('continuation window did not produce a responder message');
-        }
-        expect(driver.transport.dropNext()).toBe(true);
-
-        const getByIds = jest.mocked(driver.storeB.getByIds);
-        const lookupCount = getByIds.mock.calls.length;
-        driver.transport.connectionA.write(encodeFramedMessage(JSON.stringify({
-            type: 'ops_push',
-            sessionId: continuationOpen!.body.sessionId,
-            windowId: continuationOpen!.body.windowId,
-            data: [firstOperation],
-        })));
-        expect(await driver.transport.deliverNext()).toBe(true);
-        expect(getByIds.mock.calls.length).toBeGreaterThan(lookupCount);
-
-        driver.transport.connectionA.write(continuationResponse.raw);
-        await driver.driveUntilQuiescent(expectedIds, { timeoutMs: 10_000 });
-        await assertConverged(driver, operations);
     });
 
     it.each([
@@ -1094,10 +1084,7 @@ describe('hyperswarm mediator behavior', () => {
             : driver.nodeA.publicKey.toString('hex');
         const framedQueue = encodeFramedMessage(JSON.stringify({
             type: 'queue',
-            time: new Date().toISOString(),
-            node: 'fixture-source',
-            relays: [],
-            data: [arriving],
+            operations: [arriving],
         }));
         await targetNode.run(() => targetNode.mediator.__test.processInboundPeerData(sourceKey, framedQueue));
         await waitForPersistedOperation(targetNode, targetStore, arrivingId);
@@ -1110,10 +1097,15 @@ describe('hyperswarm mediator behavior', () => {
         });
         const pushesWithArrival = messages.filter(message => (
             message.body.type === 'ops_push'
-            && (message.body.data ?? []).some(operation => operationCursor(operation).id === arrivingId)
+            && (message.body.operations ?? []).some(operation => operationCursor(operation).id === arrivingId)
+        ));
+        const continuationOpen = messages.find(message => (
+            message.body.type === 'neg_open'
+            && message.body.windowSeq! > initialOpen.body.windowSeq!
         ));
         expect(pushesWithArrival.length).toBeGreaterThan(0);
-        expect(pushesWithArrival.every(message => message.body.windowId !== initialOpen.body.windowId)).toBe(true);
+        expect(continuationOpen).toBeDefined();
+        expect(pushesWithArrival.every(message => message.sequence > continuationOpen!.sequence)).toBe(true);
         await assertConverged(driver, union);
 
         await driver.reconnect();
@@ -1166,9 +1158,8 @@ describe('hyperswarm mediator behavior', () => {
         const splitObserved = windows.some((window, index) => {
             const previous = windows[index - 1];
             return previous
-                && window.order === previous.order
                 && sameCursor(window.after, previous.after)
-                && window.maxRecords < previous.maxRecords;
+                && window.limit < previous.limit;
         });
         if (!splitObserved) {
             throw new Error(`round-cap split not observed: ${JSON.stringify(windows)}`);

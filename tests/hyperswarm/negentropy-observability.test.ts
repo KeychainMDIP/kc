@@ -4,8 +4,6 @@ import {
     averageAggregate,
     collectQueueDelaySamples,
     createAggregateMetric,
-    messageBytes,
-    safeRate,
 } from '../../services/mediators/hyperswarm/src/negentropy/observability.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -65,19 +63,5 @@ describe('negentropy observability helpers', () => {
 
     it('returns empty samples for empty input', () => {
         expect(collectQueueDelaySamples([])).toStrictEqual([]);
-    });
-
-    it('computes message bytes for string, buffer, and object', () => {
-        expect(messageBytes('abc')).toBe(3);
-        expect(messageBytes(Buffer.from([1, 2, 3]))).toBe(3);
-        expect(messageBytes({ hello: 'world' })).toBeGreaterThan(0);
-    });
-
-    it('returns safe rate for invalid denominator', () => {
-        expect(safeRate(Number.NaN, 10)).toBe(0);
-        expect(safeRate(10, Number.NaN)).toBe(0);
-        expect(safeRate(1, 0)).toBe(0);
-        expect(safeRate(1, -1)).toBe(0);
-        expect(safeRate(2, 4)).toBe(0.5);
     });
 });

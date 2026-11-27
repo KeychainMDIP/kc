@@ -320,16 +320,12 @@ export abstract class AbstractJson implements GatekeeperDb {
         });
     }
 
-    async getQueue(registry: string): Promise<Operation[]> {
-        try {
-            const db = this.loadDb();
-            if (!db.queue || !db.queue[registry]) {
-                return [];
-            }
-            return db.queue[registry];
-        } catch {
+    async getQueue(registry: string, limit?: number): Promise<Operation[]> {
+        const db = this.loadDb();
+        if (!db.queue || !db.queue[registry]) {
             return [];
         }
+        return limit === undefined ? db.queue[registry] : db.queue[registry].slice(0, limit);
     }
 
     async clearQueue(registry: string, batch: Operation[]): Promise<boolean> {

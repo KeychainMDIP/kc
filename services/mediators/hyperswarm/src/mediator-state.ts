@@ -2,7 +2,6 @@ import type { HyperswarmConnection } from 'hyperswarm';
 import type { OperationSyncStore } from './db/types.js';
 import type {
     NegotiatedPeerCapabilities,
-    SyncMode,
 } from './negentropy/protocol.js';
 
 export interface MediatorMainOptions {
@@ -20,17 +19,22 @@ export interface ConnectionInfo {
     peerName: string;
     nodeName: string;
     lastSeen: number;
+    wireVersion: number | null;
     capabilities: NegotiatedPeerCapabilities;
-    syncMode: SyncMode | 'unknown';
     syncStarted: boolean;
     lastNegentropyAttemptAt: number;
+    negentropyRetryAfter: number;
+    negentropyBusyGeneration: number;
+    negentropyBusyRetryAfter: number;
     negentropySynced: boolean;
     orderedCatchupAttempted: boolean;
+    orderedCatchupRetryAfter: number;
     initialPingSent: boolean;
     initialPingPromise: Promise<void>;
-    initialInboundMessageReceived: boolean;
-    peerTransportFramingVersion: number | null;
-    legacyTransportQuarantined: boolean;
+    initialPingReceived: boolean;
+    lastProcessedPingAt: number;
+    protocolViolationReported: boolean;
+    terminationStarted: boolean;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
 }
@@ -51,27 +55,25 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
         lastSeen: now,
+        wireVersion: null,
         capabilities: {
-            advertised: false,
-            negentropy: false,
-            version: null,
-            orderedCatchup: false,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: false,
-            operationCount: null,
-            orderedOperationCount: null,
-            latestSignedTimestamp: null,
+            ordered: null,
+            latestTs: null,
         },
-        syncMode: 'unknown',
         syncStarted: false,
         lastNegentropyAttemptAt: 0,
+        negentropyRetryAfter: 0,
+        negentropyBusyGeneration: -1,
+        negentropyBusyRetryAfter: 0,
         negentropySynced: false,
         orderedCatchupAttempted: false,
+        orderedCatchupRetryAfter: 0,
         initialPingSent: options.requireInitialPing !== true,
         initialPingPromise: Promise.resolve(),
-        initialInboundMessageReceived: false,
-        peerTransportFramingVersion: null,
-        legacyTransportQuarantined: false,
+        initialPingReceived: false,
+        lastProcessedPingAt: 0,
+        protocolViolationReported: false,
+        terminationStarted: false,
         inboundBuffer: Buffer.alloc(0),
         inboundReceiveChain: Promise.resolve(),
     };

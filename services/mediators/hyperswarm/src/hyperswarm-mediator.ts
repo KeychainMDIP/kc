@@ -4,6 +4,10 @@ import { createHash, randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 
 import GatekeeperClient from '@mdip/gatekeeper/client';
+import {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+} from '@mdip/gatekeeper';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
 import CipherNode from '@mdip/cipher/node';
@@ -24,12 +28,19 @@ import { createPeerSyncCoordinator } from './peer-sync-coordinator.js';
 import { createHyperswarmTransport } from './hyperswarm-transport.js';
 import { createPeerDirectory } from './peer-directory.js';
 import { createQueueCoordinator } from './queue-coordinator.js';
+import { createBulkWorkScheduler } from './bulk-work-scheduler.js';
+import { createOperationPageBudget } from './operation-page-budget.js';
+import { shortName } from './short-name.js';
+import {
+    MAX_APPLICATION_CONNECTIONS,
+    MAX_NEGENTROPY_WINDOW_RECORDS,
+} from './protocol-limits.js';
 import type {
     HyperMessage,
-    HyperMessageBase,
     OrderedCatchupReqMessage,
     PingMessage,
 } from './protocol-messages.js';
+import { WIRE_PROTOCOL_VERSION } from './protocol-messages.js';
 import {
     createConnectionInfo,
     type ConnectionInfo,
@@ -65,17 +76,16 @@ let syncStore: OperationSyncStore = createConfiguredSyncStore();
 EventEmitter.defaultMaxListeners = 100;
 
 const REGISTRY = 'hyperswarm';
-const NEGENTROPY_VERSION = 1;
-const ORDERED_CATCHUP_VERSION = 1;
-const TRANSPORT_FRAMING_VERSION = 1;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
-const NEG_MAX_IDS_PER_LOOKUP = 1_000;
-const NEG_MAX_OPS_PER_PUSH = 300;
-const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
+const NEG_MAX_IDS_PER_LOOKUP = 32;
+const NEG_MAX_OPS_PER_PUSH = MAX_OPERATION_PAGE_COUNT;
+const NEG_MAX_BYTES_PER_PUSH = MAX_OPERATION_PAGE_BYTES;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const syncStats = createMediatorSyncStats();
 const dependencyRequests = new AbortController();
+const bulkReads = createBulkWorkScheduler(2);
+const operationPages = createOperationPageBudget(5, 5 * NEG_MAX_BYTES_PER_PUSH);
 let nodeKey = '';
 let nodeInfo: NodeInfo;
 const peerDirectory = createPeerDirectory({
@@ -112,21 +122,25 @@ function buildOrderedCatchupCoordinator(
     pipeline: ImportPipeline,
 ) {
     return createOrderedCatchupCoordinator({
-        version: ORDERED_CATCHUP_VERSION,
         maxOpsPerPage: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPage: NEG_MAX_BYTES_PER_PUSH,
         idleTimeoutMs: NEG_SESSION_IDLE_TIMEOUT_MS,
         syncStore: store,
         importPipeline: pipeline,
         syncStats,
+        cipher,
+        bulkReads,
+        operationPages,
         getConnection: peerKey => transport.getConnection(peerKey),
         createSessionId,
-        createBaseMessage,
         sendToPeer: (peerKey, message) => transport.sendToPeer(peerKey, message),
+        sendBulkToPeer: (peerKey, message) => transport.sendBulkToPeer(peerKey, message),
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
         onComplete: outcome => peerSyncCoordinator.handleOrderedCatchupComplete(outcome),
         onHandoffDeferred: () => peerSyncCoordinator.schedulePreferredSyncs(),
         onFailure: outcome => peerSyncCoordinator.handleOrderedCatchupFailure(outcome),
+        onProtocolViolation: (peerKey, reason, connection) =>
+            transport.reportProtocolViolation(peerKey, reason, connection),
     });
 }
 
@@ -137,9 +151,6 @@ function buildNegentropyCoordinator(
     pipeline: ImportPipeline,
 ) {
     return createNegentropyCoordinator({
-        version: NEGENTROPY_VERSION,
-        transportFramingVersion: TRANSPORT_FRAMING_VERSION,
-        frameSizeLimit: config.negentropyFrameSizeLimit,
         maxRecordsPerWindow: config.negentropyMaxRecordsPerWindow,
         maxRoundsPerSession: config.negentropyMaxRoundsPerSession,
         maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
@@ -147,28 +158,30 @@ function buildNegentropyCoordinator(
         maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
         maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
         idleTimeoutMs: NEG_SESSION_IDLE_TIMEOUT_MS,
+        repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
         syncStore: store,
         importPipeline: pipeline,
         syncStats,
+        cipher,
+        bulkReads,
+        operationPages,
         getConnection: peerKey => transport.getConnection(peerKey),
         createSessionId,
-        createBaseMessage,
         sendToPeer: (peerKey, message) => transport.sendToPeer(peerKey, message),
+        sendBulkToPeer: (peerKey, message) => transport.sendBulkToPeer(peerKey, message),
         canStartBackgroundPrebuild: () => peerSyncCoordinator.canStartBackgroundPrebuild(),
+        onProtocolViolation: (peerKey, reason, connection) =>
+            transport.reportProtocolViolation(peerKey, reason, connection),
         terminatePeerConnection: (peerKey, reason) => transport.terminatePeer(peerKey, reason),
-        onSessionClosed: (peerKey, reason) => peerSyncCoordinator.handleNegentropySessionClosed(peerKey, reason),
+        onSessionClosed: (peerKey, outcome) => peerSyncCoordinator.handleNegentropySessionClosed(peerKey, outcome),
         onIndexRefreshed: (source, sync) => peerSyncCoordinator.handleIndexRefreshed(source, sync),
     });
 }
 
 negentropyCoordinator = buildNegentropyCoordinator(syncStore, importPipeline);
 peerSyncCoordinator = createPeerSyncCoordinator({
-    negentropyVersion: NEGENTROPY_VERSION,
-    orderedCatchupVersion: ORDERED_CATCHUP_VERSION,
-    transportFramingVersion: TRANSPORT_FRAMING_VERSION,
     windowSize: config.negentropyMaxRecordsPerWindow,
     repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
-    syncStats,
     getNodeKey: () => nodeKey,
     getPeerKeys: () => transport.getPeerKeys(),
     getConnection: peerKey => transport.getConnection(peerKey),
@@ -178,28 +191,51 @@ peerSyncCoordinator = createPeerSyncCoordinator({
     getOrderedCatchupCoordinator: () => orderedCatchupCoordinator,
     waitForInitialPing: (peerKey, connection) => transport.waitForInitialPing(peerKey, connection),
     onPeersAdvertised: dids => peerDirectory.addPeers(dids),
+    onIndexReset: () => queueCoordinator.reset(),
 });
 
 const queueCoordinator = createQueueCoordinator({
     registry: REGISTRY,
+    maxOpsPerPage: NEG_MAX_OPS_PER_PUSH,
+    maxBytesPerPage: NEG_MAX_BYTES_PER_PUSH,
+    repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
     gatekeeper,
     cipher,
     syncStats,
+    bulkReads,
+    operationPages,
     getImportPipeline: () => importPipeline,
     getNodeKey: () => nodeKey,
-    createQueueMessage: () => createBaseMessage('queue'),
-    relay: message => transport.relay(message),
+    getConnection: peerKey => transport.getConnection(peerKey),
+    requestRepair: (peerKey, connection) =>
+        peerSyncCoordinator.requestRepair(peerKey, connection),
+    relay: (message, excludedPeerKey) => transport.relay(message, excludedPeerKey),
+    onProtocolViolation: (peerKey, reason, connection) =>
+        transport.reportProtocolViolation(peerKey, reason, connection),
 });
 
 transport = createHyperswarmTransport({
-    framingVersion: TRANSPORT_FRAMING_VERSION,
+    wireVersion: WIRE_PROTOCOL_VERSION,
+    payloadLimits: {
+        maxIdsPerRequest: NEG_MAX_IDS_PER_OPS_REQ,
+        maxOpsPerPush: NEG_MAX_OPS_PER_PUSH,
+        maxBytesPerPush: NEG_MAX_BYTES_PER_PUSH,
+        maxRecordsPerWindow: MAX_NEGENTROPY_WINDOW_RECORDS,
+    },
     syncStats,
     buildInitialPing: buildPingMessage,
     onPing: (peerKey, message, connection) => peerSyncCoordinator.handlePing(peerKey, message, connection),
-    onQueue: (peerKey, message) => queueCoordinator.handleMessage(peerKey, message),
+    onQueue: (peerKey, _message, connection, page) => queueCoordinator.handleMessage(
+        peerKey,
+        connection,
+        page,
+    ),
     onSyncMessage: (peerKey, message) => peerSyncCoordinator.handleMessage(peerKey, message),
-    onDisconnected: (peerKey, reason) => peerSyncCoordinator.handleDisconnected(peerKey, reason),
-    onQuarantined: (peerKey, reason, connection) => peerSyncCoordinator.handleQuarantined(peerKey, reason, connection),
+    onDisconnected: (peerKey, reason, connection) => {
+        peerSyncCoordinator.handleDisconnected(peerKey, reason);
+        queueCoordinator.handleDisconnected(peerKey, reason, connection);
+    },
+    onRelayFailure: (peerKey, connection) => queueCoordinator.handleRelayFailure(peerKey, connection),
 });
 
 function replaceSyncStore(store: OperationSyncStore): void {
@@ -212,6 +248,7 @@ function replaceSyncStore(store: OperationSyncStore): void {
     importPipeline = buildImportPipeline(store);
     orderedCatchupCoordinator = buildOrderedCatchupCoordinator(store, importPipeline);
     negentropyCoordinator.replaceStore(store, importPipeline);
+    queueCoordinator.reset();
 }
 
 let swarm: Hyperswarm | null = null;
@@ -249,12 +286,17 @@ function cleanup(): Promise<void> {
     shuttingDown = true;
     dependencyRequests.abort();
     clearLoopTimers();
+    transport.stopAdmission();
+    operationPages.shutdown();
 
     cleanupPromise = (async () => {
         const coordinatorShutdowns = [
             Promise.resolve().then(() => peerSyncCoordinator.shutdown()),
             Promise.resolve().then(() => orderedCatchupCoordinator.shutdown()),
             Promise.resolve().then(() => negentropyCoordinator.shutdown()),
+            Promise.resolve().then(() => queueCoordinator.shutdown()),
+            Promise.resolve().then(() => peerDirectory.shutdown()),
+            Promise.resolve().then(() => bulkReads.shutdown()),
         ];
 
         if (swarm) {
@@ -269,7 +311,10 @@ function cleanup(): Promise<void> {
             }
         }
 
-        const results = await Promise.allSettled(coordinatorShutdowns);
+        const results = await Promise.allSettled([
+            ...coordinatorShutdowns,
+            transport.shutdown(),
+        ]);
         for (const result of results) {
             if (result.status === 'rejected') {
                 log.error({ error: result.reason }, 'mediator shutdown error');
@@ -320,7 +365,7 @@ async function createSwarm(): Promise<void> {
         return;
     }
 
-    swarm = new Hyperswarm();
+    swarm = new Hyperswarm({ maxPeers: MAX_APPLICATION_CONNECTIONS });
     nodeKey = b4a.toString(swarm.keyPair.publicKey, 'hex');
 
     swarm.on('connection', conn => transport.addConnection(conn));
@@ -332,27 +377,15 @@ async function createSwarm(): Promise<void> {
     log.info(`new hyperswarm peer id: ${shortName(nodeKey)} (${config.nodeName}) joined topic: ${shortTopic} using protocol: ${config.protocol}`);
 }
 
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
-}
-
-function createBaseMessage<T extends HyperMessage['type']>(type: T): Omit<HyperMessageBase, 'type'> & { type: T } {
-    return {
-        type,
-        time: new Date().toISOString(),
-        node: nodeInfo?.name || config.nodeName,
-        relays: [],
-    };
-}
-
 async function buildPingMessage(): Promise<PingMessage> {
     const capabilities = await peerSyncCoordinator.buildCapabilities();
 
     return {
-        ...createBaseMessage('ping'),
-        peers: peerDirectory.getKnownDids(),
-        capabilities,
-        transportFramingVersion: TRANSPORT_FRAMING_VERSION,
+        type: 'ping',
+        version: WIRE_PROTOCOL_VERSION,
+        name: nodeInfo?.name || config.nodeName,
+        peerDids: peerDirectory.getKnownDids(),
+        ...capabilities,
     };
 }
 
@@ -450,9 +483,20 @@ async function connectionLoop(): Promise<void> {
         const msg = await buildPingMessage();
 
         await transport.relay(msg);
+        await queueCoordinator.runRepairs();
         await peerSyncCoordinator.runPeriodicRepairs();
 
-        log.info({ syncStats: buildSyncStatsSnapshot(syncStats) }, 'hyperswarm sync stats');
+        log.info({ syncStats: {
+            ...buildSyncStatsSnapshot(syncStats),
+            resources: {
+                transport: transport.getAccounting(),
+                peerAdmission: transport.getSecurityMetrics(),
+                operationPages: operationPages.getMetrics(),
+                gossip: queueCoordinator.getMetrics(),
+                imports: importPipeline.getMetrics(),
+                peerDirectory: peerDirectory.getMetrics(),
+            },
+        } }, 'hyperswarm sync stats');
 
         if (config.ipfsEnabled) {
             const peeringPeers = await ipfs.getPeeringPeers();
@@ -504,6 +548,7 @@ async function main(): Promise<void> {
     await orderedCatchupCoordinator.shutdown();
     await importPipeline.shutdown();
     const deletedRejectedOperations = await syncStore.deleteBySyncOrder(TERMINAL_REJECTED_SYNC_ORDER);
+    syncStats.hardening.terminalRecordsRemovedAtStartup += deletedRejectedOperations;
     importPipeline = buildImportPipeline(syncStore);
     orderedCatchupCoordinator = buildOrderedCatchupCoordinator(syncStore, importPipeline);
     negentropyCoordinator.replaceStore(syncStore, importPipeline);
@@ -561,7 +606,7 @@ async function main(): Promise<void> {
             intervalSeconds: 5,
             chatty: true,
         });
-        await ipfs.resetPeeringPeers();
+        await peerDirectory.initialize();
 
         const ipfsID = await ipfs.getPeerID();
         const ipfsAddresses = await ipfs.getAddresses();
@@ -639,7 +684,8 @@ export const __test = {
 
     addConnection(peerKey: string, overrides: Record<string, unknown> = {}): void {
         const connection = (overrides.connection as HyperswarmConnection | undefined) ?? ({
-            write: () => undefined,
+            write: () => true,
+            flush: async () => true,
             destroy: () => undefined,
             once: () => undefined,
             on: () => undefined,
@@ -654,7 +700,7 @@ export const __test = {
                 peerName: shortName(peerKey),
                 nodeName: 'test-peer',
             }),
-            peerTransportFramingVersion: TRANSPORT_FRAMING_VERSION,
+            wireVersion: WIRE_PROTOCOL_VERSION,
             ...connectionInfoOverrides,
         } as ConnectionInfo);
     },
@@ -665,32 +711,51 @@ export const __test = {
 
     async sendOrderedCatchupPage(peerKey: string, msg: OrderedCatchupReqMessage): Promise<void> {
         await orderedCatchupCoordinator.handleMessage(peerKey, msg);
+        await transport.waitForIdleWrites();
     },
 
     async maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic' = 'connect'): Promise<void> {
         await peerSyncCoordinator.maybeStartPeerSync(peerKey, source);
+        await transport.waitForIdleWrites();
+    },
+
+    async schedulePreferredSyncs(): Promise<void> {
+        await peerSyncCoordinator.schedulePreferredSyncs();
+        await transport.waitForIdleWrites();
     },
 
     clearExpiredOrderedCatchupServerExpectation(peerKey: string, now = Date.now()): boolean {
         return orderedCatchupCoordinator.expireServerExpectation(peerKey, now);
     },
 
-    createOrderedCatchupClientSession(peerKey: string, sessionId: string): void {
-        if (orderedCatchupCoordinator.createClientSession(peerKey, sessionId)) {
+    createOrderedCatchupClientSession(
+        peerKey: string,
+        sessionId: string,
+        requestOutstanding = true,
+    ): void {
+        if (orderedCatchupCoordinator.createClientSession(peerKey, sessionId, requestOutstanding)) {
             const conn = transport.getConnection(peerKey);
             if (conn) {
-                conn.syncMode = 'negentropy';
                 conn.syncStarted = true;
+                conn.orderedCatchupAttempted = true;
             }
         }
     },
 
     async receiveMsg(peerKey: string, msg: Record<string, unknown>): Promise<void> {
-        await transport.receiveMessage(peerKey, msg);
+        const type = typeof msg.type === 'string' ? msg.type : 'unknown';
+        const needsRound = type === 'neg_open' || type === 'neg_msg' || type === 'neg_close';
+        await transport.receiveMessage(peerKey, {
+            type,
+            ...(needsRound ? { round: negentropyCoordinator.getExpectedInboundRound(peerKey, type) } : {}),
+            ...msg,
+        } as HyperMessage);
+        await transport.waitForIdleWrites();
     },
 
     async processInboundPeerData(peerKey: string, chunk: Buffer | string): Promise<void> {
         await transport.processInboundPeerData(peerKey, chunk);
+        await transport.waitForIdleWrites();
     },
 
     async sendPingToPeer(peerKey: string): Promise<void> {
@@ -707,7 +772,6 @@ export const __test = {
         const orderedSessionId = orderedState.clientSessionId ?? orderedState.serverSessionId;
 
         return {
-            syncMode: conn.syncMode,
             syncStarted: conn.syncStarted,
             activeSession: sessionId
                 ? {
@@ -724,9 +788,11 @@ export const __test = {
             orderedCatchupServerPendingUntil: orderedState.serverPendingUntil,
             orderedCatchupServerPendingReason: orderedState.serverPendingReason,
             orderedCatchupServerPendingGap: orderedState.serverPendingGap,
+            orderedCatchupRetryAfter: conn.orderedCatchupRetryAfter,
             initialPingSent: conn.initialPingSent,
-            peerTransportFramingVersion: conn.peerTransportFramingVersion,
-            legacyTransportQuarantined: conn.legacyTransportQuarantined,
+            initialPingReceived: conn.initialPingReceived,
+            wireVersion: conn.wireVersion,
+            terminationStarted: conn.terminationStarted,
         };
     },
 

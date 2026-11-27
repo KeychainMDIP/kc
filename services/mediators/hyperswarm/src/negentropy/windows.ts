@@ -5,8 +5,6 @@ import type {
     ReconciliationWindow,
 } from './adapter.js';
 
-export const MDIP_EPOCH_SECONDS = 1_704_067_200; // 2024-01-01T00:00:00Z
-
 export function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     if (!cursor) {
         return null;
@@ -18,6 +16,9 @@ export function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | 
     };
 }
 
+export function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats;
+export function cloneWindowStats(stats: null): null;
+export function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null;
 export function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
     return stats
         ? {
@@ -41,14 +42,24 @@ export function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): 
 
     return {
         window: cloneWindow(snapshot.window),
-        stats: cloneWindowStats(snapshot.stats)!,
+        stats: cloneWindowStats(snapshot.stats),
         storage: snapshot.storage,
     };
 }
 
-export function makeWindowId(window: ReconciliationWindow): string {
+export function makeWindowKey(window: ReconciliationWindow): string {
     const after = window.after ? `${window.after.ts}:${window.after.id}` : 'none';
     return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}:${after}`;
+}
+
+export function sameWindow(left: ReconciliationWindow, right: ReconciliationWindow): boolean {
+    return left.toTs === right.toTs
+        && left.maxRecords === right.maxRecords
+        && left.order === right.order
+        && (!left.after && !right.after
+            || !!left.after && !!right.after
+            && left.after.ts === right.after.ts
+            && left.after.id === right.after.id);
 }
 
 export function windowLabel(window: ReconciliationWindow): string {
@@ -95,7 +106,7 @@ export function buildRoundCapSplitWindow(window: ReconciliationWindow): Reconcil
         fromTs: window.fromTs,
         toTs: window.toTs,
         maxRecords: splitMaxRecords,
-        order: window.order,
+        order: window.order + 1,
         after: cloneCursor(window.after) ?? undefined,
     };
 }

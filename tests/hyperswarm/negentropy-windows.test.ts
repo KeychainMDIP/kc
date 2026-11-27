@@ -71,7 +71,7 @@ describe('negentropy windows', () => {
             fromTs: 1704067200,
             toTs: 1706659200,
             maxRecords: 3,
-            order: 2,
+            order: 3,
             after: undefined,
         });
     });

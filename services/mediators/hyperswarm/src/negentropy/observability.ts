@@ -34,18 +34,6 @@ export function averageAggregate(metric: AggregateMetric): number {
     return metric.total / metric.count;
 }
 
-export function messageBytes(payload: string | Buffer | object): number {
-    if (typeof payload === 'string') {
-        return Buffer.byteLength(payload, 'utf8');
-    }
-
-    if (Buffer.isBuffer(payload)) {
-        return payload.byteLength;
-    }
-
-    return Buffer.byteLength(JSON.stringify(payload), 'utf8');
-}
-
 export function collectQueueDelaySamples(operations: Operation[], nowMs: number = Date.now()): number[] {
     if (!Array.isArray(operations) || operations.length === 0) {
         return [];
@@ -67,12 +55,4 @@ export function collectQueueDelaySamples(operations: Operation[], nowMs: number 
     }
 
     return samples;
-}
-
-export function safeRate(numerator: number, denominator: number): number {
-    if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
-        return 0;
-    }
-
-    return numerator / denominator;
 }

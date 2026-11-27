@@ -10,31 +10,184 @@ Negentropy synchronization, it closes those sessions and drains admitted imports
 before switching to ordered catch-up. Negentropy still reconciles any differences
 after the ordered transfer.
 
-Realtime propagation is always handled by the Gatekeeper queue gossip path:
+The current framed JSON wire contract has one exact compatibility version:
+`ping.version = 2`. It authorizes operation transfer through offers and requests,
+then sends one bounded page at a time and waits for an import acknowledgement.
+All network nodes must upgrade together because older message shapes are
+intentionally incompatible.
 
-- mediator polls `gatekeeper.getQueue('hyperswarm')`
-- relays queue operations with a `queue` message
-- peers import and further relay `queue` messages
+The external message shapes and ordered catch-up terminal rules are documented
+in [the Hyperswarm v2 wire protocol](../../../doc/01-protocol/hyperswarm.md),
+with a tracked [JSON Schema](../../../doc/01-protocol/hyperswarm-v2.schema.json)
+and [conformance fixture](../../../tests/hyperswarm/fixtures/hyperswarm-v2-conformance.json).
+The minimum interoperable peer implements ping plus the seven Negentropy and
+authorized-transfer messages. Queue gossip and ordered catch-up are optional.
 
-This keeps low latency for new operations while negentropy handles catch-up.
+Realtime propagation uses best-effort Gatekeeper queue gossip:
 
-## Sync mode behavior
+- mediator polls one bounded `gatekeeper.getQueue('hyperswarm')` head page per
+  existing flush
+- relays queue operations with a `queue` message whose operation array is named
+  `operations`
+- peers import operations, persist the shareable results, then relay them while
+  excluding the immediate source locally
 
-| peer mode | connect-time behavior | periodic behavior | queue gossip |
-| --- | --- | --- | --- |
-| `negentropy` | optional ordered catch-up, then full-history windowed reconciliation | periodic retry until sync completes, then stop | enabled |
+Each receiver admits at most two gossip batches and bounds recent outcomes.
+Overload, incomplete imports and outbound delivery failures schedule targeted
+Negentropy repair without penalizing the source peer. Persisted pages are relayed
+as they drain, so older accepted operations do not wait for a complete batch.
+Queue shape and byte limits are validated once at transport ingress. Saturated
+gossip is dropped before content-ID hashing and schedules the same bounded
+repair. Admitted outcomes are keyed by sorted verified operation IDs, so changing
+wire order does not bypass duplicate suppression.
+
+This keeps low latency for new operations while Negentropy handles catch-up and
+recovers best-effort delivery failures.
+
+## Native Negentropy engine
+
+The mediator vendors the official JavaScript Negentropy engine as
+`src/negentropy/Negentropy.cjs`; the `.cjs` extension only selects Node's module
+format. Its reproducible source provenance is:
+
+- repository: `https://github.com/hoytech/negentropy`
+- commit: `fc53c6c12db03c0d27abfd1e956ba75c37152821`
+- source path: `js/Negentropy.js`
+- SHA-256: `0ccda2fb5343f97a0679442aec55e258cab09ddc775a3f8af87ada7b3c02cb50`
+- license: MIT
+- embedded frame byte: `0x61`
+
+These details identify the engine embedded by the MDIP v2 contract; they do not
+define another supported public wire version. Deterministic native frames and
+fingerprints are kept in
+`tests/hyperswarm/fixtures/negentropy-native-conformance.json`.
+Native frames are emitted as bytes and carried in JSON as canonical padded
+base64. Their decoded protocol maximum is fixed at 128 KiB.
+
+## Transfer and resource limits
+
+Every message uses four-byte-length-prefixed JSON, including the initial ping.
+Raw JSON peers cannot connect. A compatible initial ping must advertise wire
+version 2 before any queue or synchronization traffic is accepted. The ping may
+also advertise a display name, discovery DIDs, the latest signed timestamp and
+ordered catch-up state. An admitted connection has 15 seconds to provide that
+compatible ping. Missing the deadline closes the connection and applies the
+existing bounded protocol cooldown; the separate stale-connection timeout still
+covers established peers that later stop communicating.
+
+Inbound and outbound operation pages have the same limits: 300 operations and
+512 KiB for the exact UTF-8 bytes of the serialized operation array, including
+its brackets and commas. Offers and requests contain at most 1,000
+IDs. Synchronization windows contain at most 25,000 records. A single operation
+larger than the page limit fails that transfer rather than bypassing the limit.
+Local publication pages remain in Gatekeeper until imported and cleared; the
+next existing flush drains the next head page without adding another queue or
+worker.
+
+Ordered catch-up accepts pages only against outstanding requests and checks the
+exact continuation cursor. It permits one active import plus two requested pages
+waiting. Negentropy v2 uses `ops_offer`, `ops_req`, `ops_push`, and `ops_ack`.
+A push must contain only IDs in the receiver's current request. Each direction
+has at most one operation request outstanding, and the sender waits for the
+current page to be imported and acknowledged before sending another. The
+session initiator assigns one increasing `transferId` across offers and direct
+requests; push and acknowledgement pages reuse that ID and a zero-based `page`.
+Session closes expose only the stable control outcomes `complete`, `busy`,
+`round_limit`, and `incomplete`. Exact local failure reasons remain in the
+sender's structured logs rather than crossing the wire.
+
+Live gossip admits one active and one waiting batch globally. Completed and
+retry-delayed batch hashes share a 4,096-entry FIFO cache. Pending input and local
+capacity failures remain retryable after the repair interval. Repeated copies
+within that interval do not resubmit work or create repeated repair jobs.
+
+Inbound operation pages share a five-page, 2.5-MiB operation-data budget. Raw
+framed input and queued output have separate per-connection and global byte budgets,
+including the framing header and message envelope. An incomplete frame and a
+blocked outbound write each have a two-minute deadline. Local byte pressure
+does not count as a protocol strike.
+
+The mediator accepts at most 64 application connections and tracks at most 128
+active plus draining connections. Optional IPFS discovery queues at most 256
+candidates, resolves four concurrently, and retains at most 4,096 DID records
+plus a separate 4,096-entry failure cache. Failed candidates wait five minutes
+before another resolution attempt. Pings are processed at most once every ten
+seconds per connection.
+
+Kubo discovery refuses additions when the total peering configuration reaches
+4,096 entries, including pre-existing entries. Startup preserves those entries
+even if they already exceed the limit, and eviction removes only peers added by
+this process. Automatic discovery stops when the persistent limit is full or its
+configuration cannot be read. Operators must review unwanted entries to free
+capacity. The mediator never deletes protected operator configuration to make
+room. A complete Kubo peer-addition attempt, including all advertised addresses
+and its internal configuration I/O, shares one ten-second deadline.
+
+## Invalid input, quarantine, and recovery
+
+Objective protocol violations, such as malformed frames, oversized pages,
+unsolicited responses for a current request, or operations with mismatched
+content IDs, terminate the connection. The remote public key receives a temporary
+cooldown of one minute, five minutes, thirty minutes, then six hours for repeated
+violations. Strikes decay after 24 hours without another violation. The
+process-local policy holds at most 4,096 entries and survives in-process swarm
+recreation. It does not survive a mediator restart. Incompatible MDIP wire
+versions receive a non-punitive one-minute retry delay.
+
+Gatekeeper rejection and local overload do not earn strikes. Operations without
+a content-verified synchronization ID are neither persisted nor advertised.
+Content-verified operations rejected against this node's history, including
+losing forks and pre-0.5 operations without `previd`, remain portable inventory.
+They are persisted before relay because another node may accept them. Startup
+removes these provisional terminal records before rebuilding from Gatekeeper,
+allowing reconciliation to retrieve and reconsider them.
+
+These safeguards bound transport, gossip, discovery, and retry state. They do
+not prevent cryptographically valid spam or peers rotating public keys. Portable
+terminal inventory can still grow during one process lifetime. Safely bounding
+that inventory requires Gatekeeper rejection reasons that distinguish globally
+invalid data from alternatives valid on another history.
+
+## Deployment compatibility
+
+Upgrade all Hyperswarm mediators together. MDIP wire version 2 has no fallback,
+and older peers are refused before application traffic. No database reset is needed.
+Gatekeeper and every mediator must also support the bounded pending-event and
+paged-processing contract. Deploy the companion Gatekeeper ingress changes
+before claiming end-to-end memory protection.
 
 ## Observability
 
 The mediator emits periodic structured sync metrics in `connectionLoop` including:
 
-- negentropy mode selection and incompatibility counts
+- Negentropy session counts
 - negentropy rounds and have/need totals
 - ops requested/pushed sent and received
 - gatekeeper apply/reject totals
 - bytes sent/received
 - session duration aggregates
 - queue delay aggregates (from operation `signature.signed` to relay/import time)
+- fixed-category protocol strike counts, oversized operation/ID messages,
+  unsolicited ordered responses, and unauthorized Negentropy transfers
+- gossip overload drops, scheduled/started repairs, retry suppression, and
+  shareable operations relayed after persistence
+- byte-budget refusals, frame timeouts, skipped pings, connection-capacity
+  refusals, and wire-version incompatibility closures
+- Gatekeeper capacity outcomes, retry-delay evictions, terminal records persisted,
+  and terminal rows removed at startup
+- current transport bytes, operation-page bytes, gossip admission and deduplication
+  counts, pending repairs, retry-delayed IDs, and quarantine counts/evictions
+- peer-directory admission drops, cache hits/evictions, Kubo capacity refusals,
+  and current discovery work
+
+These counters are cumulative for the mediator process. Resource counts describe
+the current snapshot. Protocol-strike categories are fixed and never use remote
+peer IDs or arbitrary message text as metric keys. The periodic
+`hyperswarm sync stats` info record includes these metrics; no additional
+endpoint is created.
+The relayed gossip operation count includes each successful peer write, so one
+operation sent to three peers counts three times. It does not prove remote
+Gatekeeper acceptance.
 
 ## Environment variables
 
@@ -51,8 +204,7 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_HYPR_POSTGRES_URL`    | `KC_POSTGRES_URL`, then built-in DSN | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_POSTGRES_URL`         | (no default)                 | Shared fallback for `KC_HYPR_POSTGRES_URL` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
-| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
-| `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter. It is also the non-empty-node gap threshold for ordered catch-up |
+| `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter, with a hard maximum of 25,000. It is also the non-empty-node gap threshold for ordered catch-up |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
 | `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
@@ -62,11 +214,20 @@ Ordered catch-up uses the same operation push chunking as negentropy: up to 300 
 
 Gatekeeper imports are also consumed in bounded pages. If Gatekeeper retains an
 operation while waiting for a dependency or refuses it because the pending queue
-is full, the mediator does not advertise that operation as stored or relay its
-live-gossip batch. It delays another local submission until the normal
+is full, the mediator does not advertise or relay that pending operation. It
+may relay other accepted or portable-terminal operations from the same batch
+after persistence. It delays another local submission until the normal
 Negentropy repair interval, while later synchronization remains able to retry
-the operation. Gatekeeper and mediator versions containing this contract must
-be deployed together.
+the operation. Active delays survive an ordinary mediator restart, expire at
+the normal repair deadline, and are cleared as soon as the operation becomes
+known. Gatekeeper and mediator versions containing this contract must be
+deployed together.
+
+Gatekeeper separately caps retained pending events at 10,000 events and 64 MiB,
+with a reserved transient lane for a new page that may supply a missing
+dependency. Its processing responses are paged at 300 events and 512 KiB of
+normalized event envelopes. The mediator drains those responses before treating
+the work as complete. These limits complement the mediator's memory budgets.
 
 ## IPFS disabled mode
 

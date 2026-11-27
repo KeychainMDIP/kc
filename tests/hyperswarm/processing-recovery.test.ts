@@ -12,12 +12,21 @@ import InMemoryOperationSyncStore from '../../services/mediators/hyperswarm/src/
 import { createOrderedCatchupCoordinator } from '../../services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts';
 import type { ConnectionInfo } from '../../services/mediators/hyperswarm/src/mediator-state.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
-const operation: Operation = {
+const unsignedOperation: Operation = {
     type: 'create', created: '2026-01-01T00:00:00.000Z',
     mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
-    signature: { signed: '2026-01-01T00:00:00.000Z', hash: 'a'.repeat(64), value: 'signature' },
+};
+const operation: Operation = {
+    ...unsignedOperation,
+    signature: {
+        signed: unsignedOperation.created!,
+        hash: new CipherNode().hashJSON(unsignedOperation),
+        value: 'signature',
+    },
 };
 const request = { kind: 'remote' as const, name: 'peer', data: [operation] };
 function makeOperations(count: number): Operation[] {
@@ -277,8 +286,8 @@ describe('Gatekeeper processing recovery', () => {
             await jest.advanceTimersByTimeAsync(2_000);
             await expect(first).resolves.toMatchObject({ retryable: false });
             await expect(second).resolves.toMatchObject({ retryable: false });
-            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(2);
-            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(3);
+            expect(gatekeeper.importBatch).toHaveBeenCalledTimes(1);
+            expect(gatekeeper.processEvents).toHaveBeenCalledTimes(2);
             expect(gatekeeper.getStatus).toHaveBeenCalledTimes(2);
             expect(gatekeeper.getStatus).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 5_000, maxResponseBytes: 65_536 }));
             const recoveryLogs = jest.mocked(logger.child).mock.results.flatMap(child => jest.mocked((child.value as typeof logger).info).mock.calls);
@@ -450,30 +459,36 @@ describe('Gatekeeper processing recovery', () => {
 
     it('keeps the ordered session alive while its local import recovers and resumes prefetch', async () => {
         const { pipeline, gatekeeper } = fixture();
+        const [orderedOperation] = makeOperations(1);
         await pipeline.refreshIndex('startup');
         gatekeeper.processEvents.mockRejectedValueOnce('timeout of 60000ms exceeded');
         gatekeeper.getStatus.mockResolvedValue(status(true));
         const onFailure = jest.fn(async () => {});
         const sendToPeer = jest.fn(() => true);
         const coordinator = createOrderedCatchupCoordinator({
-            version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
-            syncStore: new InMemoryOperationSyncStore(), importPipeline: pipeline, syncStats: createMediatorSyncStats(),
+            maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
+            syncStore: new InMemoryOperationSyncStore(), importPipeline: pipeline,
+            syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer,
+            sendToPeer,
+            sendBulkToPeer: async () => sendToPeer(),
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
+            onProtocolViolation: jest.fn(),
         });
         try {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
-                data: [operation], cursor: { syncOrder: 1, id: operation.signature!.hash }, hasMore: true,
+                type: 'ordered_catchup_push', sessionId: 'session',
+                operations: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();
             const sent = sendToPeer.mock.calls.length;
             // An already requested prefetched page may arrive while the worker waits.
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
-                data: [operation], cursor: { syncOrder: 2, id: operation.signature!.hash }, hasMore: true,
+                type: 'ordered_catchup_push', sessionId: 'session',
+                operations: [orderedOperation], cursor: { syncOrder: 2, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await jest.advanceTimersByTimeAsync(121_000);
             coordinator.expire();
@@ -495,10 +510,11 @@ describe('Gatekeeper processing recovery', () => {
 
     it('gives the ordered page its normal idle grace while a recovered result is being persisted', async () => {
         const { pipeline, gatekeeper, store } = fixture();
+        const [orderedOperation] = makeOperations(1);
         await pipeline.refreshIndex('startup');
         gatekeeper.processEvents.mockResolvedValueOnce({ busy: true }).mockResolvedValue({
             added: 1, merged: 0, rejected: 0, pending: 0,
-            acceptedHashes: [operation.signature!.hash], acceptedEvents: [],
+            acceptedHashes: [orderedOperation.signature!.hash], acceptedEvents: [],
         });
         gatekeeper.getStatus.mockResolvedValue(status(true));
         let release!: () => void;
@@ -513,17 +529,21 @@ describe('Gatekeeper processing recovery', () => {
         });
         const onFailure = jest.fn(async () => {});
         const coordinator = createOrderedCatchupCoordinator({
-            version: 1, maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
-            syncStore: store, importPipeline: pipeline, syncStats: createMediatorSyncStats(),
+            maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024, idleTimeoutMs: 120_000,
+            syncStore: store, importPipeline: pipeline, syncStats: createMediatorSyncStats(), cipher: new CipherNode(),
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getConnection: () => ({} as ConnectionInfo), createSessionId: () => 'session',
-            createBaseMessage: type => ({ type, time: '', node: '', relays: [] }), sendToPeer: () => true,
+            sendToPeer: () => true,
+            sendBulkToPeer: async () => true,
             onFailure, onIndexRefreshed: async () => {}, onComplete: async () => false, onHandoffDeferred: async () => {},
+            onProtocolViolation: jest.fn(),
         });
         try {
             expect(coordinator.startClient('peer', 'empty', 100_000)).toBe(true);
             await coordinator.handleMessage('peer', {
-                type: 'ordered_catchup_push', sessionId: 'session', time: '', node: '', relays: [],
-                data: [operation], cursor: { syncOrder: 1, id: operation.signature!.hash }, hasMore: true,
+                type: 'ordered_catchup_push', sessionId: 'session',
+                operations: [orderedOperation], cursor: { syncOrder: 1, id: orderedOperation.signature!.hash }, hasMore: true,
             });
             await nextTurn();
             await jest.advanceTimersByTimeAsync(121_000);
@@ -537,7 +557,7 @@ describe('Gatekeeper processing recovery', () => {
             expect(coordinator.hasActiveOutbound()).toBe(true);
             release();
             await pipeline.waitForIdle();
-            expect(await store.has(operation.signature!.hash)).toBe(true);
+            expect(await store.has(orderedOperation.signature!.hash)).toBe(true);
         } finally {
             release();
             await pipeline.shutdown();

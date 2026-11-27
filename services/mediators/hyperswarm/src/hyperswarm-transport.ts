@@ -6,162 +6,399 @@ import {
     createConnectionInfo,
     type ConnectionInfo,
 } from './mediator-state.js';
-import {
-    isHyperMessage,
-    isSyncMessage,
-    type HyperMessage,
-    type PingMessage,
-    type QueueMessage,
-    type SyncMessage,
+import type {
+    HyperMessage,
+    PingMessage,
+    QueueMessage,
+    SyncMessage,
 } from './protocol-messages.js';
-import type { MediatorSyncStats } from './sync-stats.js';
+import { recordProtocolStrike, type MediatorSyncStats } from './sync-stats.js';
 import {
     DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
     decodeFramedMessages,
-    decodeLegacyJsonMessages,
     encodeFramedMessage,
+    FRAME_HEADER_BYTES,
 } from './transport-framing.js';
+import { createPeerAdmissionPolicy } from './peer-admission.js';
+import {
+    validateHyperMessageEnvelope,
+    validateHyperMessagePayload,
+    validateQueueMessagePayload,
+    type ProtocolPayloadLimits,
+} from './protocol-validation.js';
+import type { ValidatedOperationPage } from './negentropy/transfer.js';
+import { MAX_APPLICATION_CONNECTIONS } from './protocol-limits.js';
+import { shortName } from './short-name.js';
 
 const log = childLogger({ service: 'hyperswarm-transport' });
-const MALFORMED_PEER_STRIKE_WINDOW_MS = 5 * 60 * 1000;
-const MALFORMED_PEER_COOLDOWN_MS = 5 * 60 * 1000;
-const MALFORMED_PEER_REJECT_LOG_INTERVAL_MS = 60 * 1000;
-const MALFORMED_PEER_MAX_STRIKES = 3;
+const DEFAULT_PING_INTERVAL_MS = 10 * 1_000;
+const DEFAULT_INITIAL_PING_TIMEOUT_MS = 15 * 1_000;
+const DEFAULT_IO_TIMEOUT_MS = 2 * 60 * 1_000;
+const OPERATION_FRAME_OVERHEAD_BYTES = 64 * 1024;
 
-interface MalformedPeerState {
-    strikes: number;
-    firstSeenAt: number;
-    lastSeenAt: number;
-    cooldownUntil: number;
-    lastReason: string;
-    rejectedConnections: number;
-    lastRejectLogAt: number;
+interface InboundState {
+    reservedBytes: number;
+    queuedChunks: number;
+    paused: boolean;
+    initialPingTimer: ReturnType<typeof setTimeout> | null;
+    partialFrameTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface PendingWrite {
+    bytes: number;
+    framed: Buffer;
+    settled: boolean;
+    resolve(): void;
+    reject(error: Error): void;
+    timer: ReturnType<typeof setTimeout> | null;
+}
+
+interface WriterState {
+    reservedBytes: number;
+    active: PendingWrite | null;
+    queue: PendingWrite[];
+    closed: boolean;
+}
+
+interface TransportAccounting {
+    inboundBytes: number;
+    outboundBytes: number;
+    connections: number;
 }
 
 export interface HyperswarmTransportOptions {
-    framingVersion: number;
+    wireVersion: number;
+    payloadLimits: ProtocolPayloadLimits;
     syncStats: MediatorSyncStats;
     buildInitialPing(): Promise<PingMessage>;
     onPing(peerKey: string, message: PingMessage, connection: ConnectionInfo): void | Promise<void>;
-    onQueue(peerKey: string, message: QueueMessage, connection: ConnectionInfo): void | Promise<void>;
+    onQueue(
+        peerKey: string,
+        message: QueueMessage,
+        connection: ConnectionInfo,
+        page: ValidatedOperationPage,
+    ): void | Promise<void>;
     onSyncMessage(peerKey: string, message: SyncMessage, connection: ConnectionInfo): void | Promise<void>;
-    onDisconnected(peerKey: string, reason: string): void;
-    onQuarantined(peerKey: string, reason: string, connection: ConnectionInfo): void;
+    onDisconnected(peerKey: string, reason: string, connection: ConnectionInfo): void;
+    onRelayFailure?(peerKey: string, connection: ConnectionInfo): void;
     maxMessageBytes?: number;
+    maxPeerStates?: number;
+    now?: () => number;
+    pingIntervalMs?: number;
+    initialPingTimeoutMs?: number;
     staleConnectionMs?: number;
-}
-
-function shortName(peerKey: string): string {
-    return peerKey.slice(0, 4) + '-' + peerKey.slice(-4);
+    frameAssemblyTimeoutMs?: number;
+    writeTimeoutMs?: number;
+    maxConnections?: number;
+    maxInboundBytesPerConnection?: number;
+    maxInboundBytesTotal?: number;
+    maxOutboundBytesPerConnection?: number;
+    maxOutboundBytesTotal?: number;
 }
 
 export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     const connections: Record<string, ConnectionInfo> = {};
-    const malformedPeers: Record<string, MalformedPeerState> = {};
+    const trackedConnections = new Set<ConnectionInfo>();
+    const drainingConnections = new Map<string, Set<ConnectionInfo>>();
+    const inboundStates = new WeakMap<ConnectionInfo, InboundState>();
+    const writerStates = new WeakMap<ConnectionInfo, WriterState>();
+    const writerIdleWaiters = new Set<() => void>();
     const maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
+    const maxEncodedFrameBytes = maxMessageBytes + FRAME_HEADER_BYTES;
+    const maxEncodedOperationFrameBytes = Math.min(
+        maxEncodedFrameBytes,
+        options.payloadLimits.maxBytesPerPush + OPERATION_FRAME_OVERHEAD_BYTES + FRAME_HEADER_BYTES,
+    );
+    const now = options.now ?? (() => Date.now());
+    const pingIntervalMs = options.pingIntervalMs ?? DEFAULT_PING_INTERVAL_MS;
+    const initialPingTimeoutMs = options.initialPingTimeoutMs ?? DEFAULT_INITIAL_PING_TIMEOUT_MS;
     const staleConnectionMs = options.staleConnectionMs ?? 3 * 60 * 1000;
+    const frameAssemblyTimeoutMs = options.frameAssemblyTimeoutMs ?? DEFAULT_IO_TIMEOUT_MS;
+    const writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_IO_TIMEOUT_MS;
+    const maxConnections = options.maxConnections ?? MAX_APPLICATION_CONNECTIONS;
+    const maxInboundBytesPerConnection = options.maxInboundBytesPerConnection ?? maxEncodedFrameBytes;
+    const maxInboundBytesTotal = options.maxInboundBytesTotal
+        ?? maxEncodedFrameBytes + (2 * maxEncodedOperationFrameBytes);
+    const maxOutboundBytesPerConnection = options.maxOutboundBytesPerConnection
+        ?? maxEncodedFrameBytes + maxEncodedOperationFrameBytes;
+    const maxOutboundBytesTotal = options.maxOutboundBytesTotal
+        ?? maxEncodedFrameBytes + (2 * maxEncodedOperationFrameBytes);
+    let totalInboundBytes = 0;
+    let totalOutboundBytes = 0;
+    let accepting = true;
+    let shutdownPromise: Promise<void> | null = null;
 
-    function getMalformedPeerCooldown(peerKey: string, nowMs = Date.now()): MalformedPeerState | null {
-        const state = malformedPeers[peerKey];
+    function assertPositiveSafeInteger(value: number, name: string): void {
+        if (!Number.isSafeInteger(value) || value < 1) {
+            throw new Error(`${name} must be a positive safe integer`);
+        }
+    }
+
+    assertPositiveSafeInteger(maxMessageBytes, 'maxMessageBytes');
+    assertPositiveSafeInteger(initialPingTimeoutMs, 'initialPingTimeoutMs');
+    assertPositiveSafeInteger(frameAssemblyTimeoutMs, 'frameAssemblyTimeoutMs');
+    assertPositiveSafeInteger(writeTimeoutMs, 'writeTimeoutMs');
+    assertPositiveSafeInteger(maxConnections, 'maxConnections');
+    assertPositiveSafeInteger(maxInboundBytesPerConnection, 'maxInboundBytesPerConnection');
+    assertPositiveSafeInteger(maxInboundBytesTotal, 'maxInboundBytesTotal');
+    assertPositiveSafeInteger(maxOutboundBytesPerConnection, 'maxOutboundBytesPerConnection');
+    assertPositiveSafeInteger(maxOutboundBytesTotal, 'maxOutboundBytesTotal');
+    if (!Number.isFinite(pingIntervalMs) || pingIntervalMs <= 0) {
+        throw new Error('pingIntervalMs must be a positive finite number');
+    }
+    if (!Number.isFinite(staleConnectionMs) || staleConnectionMs <= 0) {
+        throw new Error('staleConnectionMs must be a positive finite number');
+    }
+    const admission = createPeerAdmissionPolicy({
+        now,
+        maxEntries: options.maxPeerStates,
+    });
+    const maxTrackedConnections = Math.min(Number.MAX_SAFE_INTEGER, maxConnections * 2);
+
+    function getInboundState(connection: ConnectionInfo): InboundState {
+        let state = inboundStates.get(connection);
         if (!state) {
-            return null;
+            state = {
+                reservedBytes: 0,
+                queuedChunks: 0,
+                paused: false,
+                initialPingTimer: null,
+                partialFrameTimer: null,
+            };
+            inboundStates.set(connection, state);
         }
-
-        if (state.cooldownUntil <= nowMs) {
-            if ((nowMs - state.lastSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
-                delete malformedPeers[peerKey];
-            }
-            return null;
-        }
-
         return state;
     }
 
-    function noteMalformedPeer(peerKey: string, reason: string): void {
-        const nowMs = Date.now();
-        let state = malformedPeers[peerKey];
-        if (!state || (nowMs - state.firstSeenAt) > MALFORMED_PEER_STRIKE_WINDOW_MS) {
+    function getWriterState(connection: ConnectionInfo): WriterState {
+        let state = writerStates.get(connection);
+        if (!state) {
             state = {
-                strikes: 0,
-                firstSeenAt: nowMs,
-                lastSeenAt: nowMs,
-                cooldownUntil: 0,
-                lastReason: reason,
-                rejectedConnections: 0,
-                lastRejectLogAt: 0,
+                reservedBytes: 0,
+                active: null,
+                queue: [],
+                closed: false,
             };
-            malformedPeers[peerKey] = state;
+            writerStates.set(connection, state);
         }
-
-        state.strikes += 1;
-        state.lastSeenAt = nowMs;
-        state.lastReason = reason;
-
-        if (state.strikes >= MALFORMED_PEER_MAX_STRIKES && state.cooldownUntil <= nowMs) {
-            state.cooldownUntil = nowMs + MALFORMED_PEER_COOLDOWN_MS;
-            state.rejectedConnections = 0;
-            state.lastRejectLogAt = 0;
-            options.syncStats.malformedPeerCooldowns += 1;
-            log.warn({
-                peer: shortName(peerKey),
-                reason,
-                strikes: state.strikes,
-                cooldownMs: MALFORMED_PEER_COOLDOWN_MS,
-            }, 'peer entered malformed message cooldown');
-        }
+        return state;
     }
 
-    function rejectMalformedPeerIfCoolingDown(peerKey: string, connection: HyperswarmConnection): boolean {
-        const state = getMalformedPeerCooldown(peerKey);
-        if (!state) {
+    function rejectRestrictedPeer(peerKey: string, connection: HyperswarmConnection): boolean {
+        const restriction = admission.noteRejectedConnection(peerKey);
+        if (!restriction) {
             return false;
         }
 
-        const nowMs = Date.now();
-        state.rejectedConnections += 1;
-        options.syncStats.malformedPeerConnectionsRejected += 1;
+        if (restriction.kind === 'punitive') {
+            options.syncStats.protocolViolationConnectionsRejected += 1;
+        } else {
+            options.syncStats.compatibilityConnectionsRejected += 1;
+        }
         const logPayload = {
             peer: shortName(peerKey),
-            lastReason: state.lastReason,
-            strikes: state.strikes,
-            rejectedConnections: state.rejectedConnections,
-            remainingMs: state.cooldownUntil - nowMs,
+            kind: restriction.kind,
+            lastReason: restriction.reason,
+            strikes: restriction.strikes,
+            rejectedConnections: restriction.rejectedConnections,
+            remainingMs: restriction.until - now(),
         };
-        if ((nowMs - state.lastRejectLogAt) >= MALFORMED_PEER_REJECT_LOG_INTERVAL_MS) {
-            state.lastRejectLogAt = nowMs;
-            log.warn(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+        if (restriction.shouldWarn) {
+            log.warn(logPayload, 'rejecting restricted hyperswarm peer');
         } else {
-            log.debug(logPayload, 'rejecting hyperswarm peer during malformed message cooldown');
+            log.debug(logPayload, 'rejecting restricted hyperswarm peer');
         }
 
         try {
             connection.destroy?.();
         } catch (error) {
-            log.warn({ error, peer: shortName(peerKey) }, 'failed to destroy rejected malformed peer connection');
+            log.warn({ error, peer: shortName(peerKey) }, 'failed to destroy restricted peer connection');
         }
         return true;
     }
 
-    function clearMalformedPeer(peerKey: string, reason: string): void {
-        const state = malformedPeers[peerKey];
-        if (!state) {
-            return;
-        }
-
-        delete malformedPeers[peerKey];
-        log.info({
-            peer: shortName(peerKey),
-            reason,
-            strikes: state.strikes,
-            rejectedConnections: state.rejectedConnections,
-        }, 'cleared malformed peer cooldown state');
-    }
-
-    function notifyDisconnected(peerKey: string, reason: string): void {
+    function notifyDisconnected(
+        peerKey: string,
+        reason: string,
+        connection: ConnectionInfo,
+    ): void {
         try {
-            options.onDisconnected(peerKey, reason);
+            options.onDisconnected(peerKey, reason, connection);
         } catch (error) {
             log.error({ error, peer: shortName(peerKey), reason }, 'peer disconnect callback failed');
+        }
+    }
+
+    function clearPartialFrameDeadline(connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (state.partialFrameTimer) {
+            clearTimeout(state.partialFrameTimer);
+            state.partialFrameTimer = null;
+        }
+    }
+
+    function clearInitialPingDeadline(connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (state.initialPingTimer) {
+            clearTimeout(state.initialPingTimer);
+            state.initialPingTimer = null;
+        }
+    }
+
+    function startInitialPingDeadline(peerKey: string, connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        state.initialPingTimer = setTimeout(() => {
+            state.initialPingTimer = null;
+            reportProtocolViolation(peerKey, 'initial_ping_timeout', connection);
+        }, initialPingTimeoutMs);
+    }
+
+    function releaseInboundBytes(connection: ConnectionInfo, bytes: number): void {
+        if (bytes <= 0) {
+            return;
+        }
+        const state = getInboundState(connection);
+        const released = Math.min(bytes, state.reservedBytes);
+        state.reservedBytes -= released;
+        totalInboundBytes = Math.max(0, totalInboundBytes - released);
+    }
+
+    function releaseAllInbound(connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        clearPartialFrameDeadline(connection);
+        releaseInboundBytes(connection, state.reservedBytes);
+        state.queuedChunks = 0;
+        connection.inboundBuffer = Buffer.alloc(0);
+    }
+
+    function pauseConnection(connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (state.paused) {
+            return;
+        }
+        state.paused = true;
+        try {
+            connection.connection.pause?.();
+        }
+        catch (error) {
+            log.warn({ error, peer: connection.peerName }, 'failed to pause hyperswarm peer');
+        }
+    }
+
+    function resumeConnection(peerKey: string, connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (!state.paused || state.queuedChunks !== 0 || !accepting
+            || connections[peerKey] !== connection || connection.terminationStarted) {
+            return;
+        }
+        state.paused = false;
+        try {
+            connection.connection.resume?.();
+        }
+        catch (error) {
+            log.warn({ error, peer: connection.peerName }, 'failed to resume hyperswarm peer');
+            terminatePeer(peerKey, 'inbound_resume_failed', connection);
+        }
+    }
+
+    function releaseOutboundBytes(connection: ConnectionInfo, task: PendingWrite): void {
+        if (task.bytes <= 0) {
+            return;
+        }
+        const state = getWriterState(connection);
+        const released = Math.min(task.bytes, state.reservedBytes);
+        state.reservedBytes -= released;
+        totalOutboundBytes = Math.max(0, totalOutboundBytes - released);
+        task.bytes = 0;
+        if (totalOutboundBytes === 0) {
+            for (const resolve of writerIdleWaiters) {
+                resolve();
+            }
+            writerIdleWaiters.clear();
+        }
+    }
+
+    function waitForIdleWrites(): Promise<void> {
+        return totalOutboundBytes === 0
+            ? Promise.resolve()
+            : new Promise(resolve => writerIdleWaiters.add(resolve));
+    }
+
+    function settleWrite(
+        peerKey: string,
+        connection: ConnectionInfo,
+        task: PendingWrite,
+        error?: Error,
+    ): void {
+        if (task.settled) {
+            return;
+        }
+        task.settled = true;
+        if (task.timer) {
+            clearTimeout(task.timer);
+            task.timer = null;
+        }
+        const state = getWriterState(connection);
+        if (state.active === task) {
+            state.active = null;
+        } else {
+            const index = state.queue.indexOf(task);
+            if (index >= 0) {
+                state.queue.splice(index, 1);
+            }
+        }
+        releaseOutboundBytes(connection, task);
+        if (error) {
+            task.reject(error);
+        } else {
+            task.resolve();
+        }
+        processWriter(peerKey, connection);
+    }
+
+    function closeWriter(peerKey: string, connection: ConnectionInfo, reason: string): void {
+        const state = getWriterState(connection);
+        if (state.closed) {
+            return;
+        }
+        state.closed = true;
+        const error = new Error(`hyperswarm writer closed: ${reason}`);
+        if (state.active) {
+            settleWrite(peerKey, connection, state.active, error);
+        }
+        for (const task of [...state.queue]) {
+            settleWrite(peerKey, connection, task, error);
+        }
+    }
+
+    function cleanupConnection(peerKey: string, connection: ConnectionInfo, reason: string): void {
+        clearInitialPingDeadline(connection);
+        clearPartialFrameDeadline(connection);
+        closeWriter(peerKey, connection, reason);
+        const draining = drainingConnections.get(peerKey) ?? new Set<ConnectionInfo>();
+        draining.add(connection);
+        drainingConnections.set(peerKey, draining);
+        Promise.allSettled([
+            connection.inboundReceiveChain,
+            connection.initialPingPromise,
+        ]).then(
+            () => {
+                releaseAllInbound(connection);
+                trackedConnections.delete(connection);
+                draining.delete(connection);
+                if (draining.size === 0) {
+                    drainingConnections.delete(peerKey);
+                }
+            },
+        );
+    }
+
+    function destroyUnadmitted(connection: HyperswarmConnection, reason: string): void {
+        try {
+            connection.destroy?.();
+        }
+        catch (error) {
+            log.warn({ error, reason }, 'failed to destroy unadmitted hyperswarm connection');
         }
     }
 
@@ -175,10 +412,12 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             return;
         }
 
+        connection.terminationStarted = true;
         if (connections[peerKey] === connection) {
             delete connections[peerKey];
         }
-        notifyDisconnected(peerKey, reason);
+        cleanupConnection(peerKey, connection, reason);
+        notifyDisconnected(peerKey, reason, connection);
         log.info(`* connection closed with: ${connection.peerName} (${connection.nodeName}) *`);
     }
 
@@ -188,49 +427,186 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         expectedConnection?: ConnectionInfo,
     ): void {
         const connection = connections[peerKey];
-        if (!connection || (expectedConnection && connection !== expectedConnection)) {
+        if (!connection
+            || (expectedConnection && connection !== expectedConnection)
+            || connection.terminationStarted) {
             return;
         }
 
-        notifyDisconnected(peerKey, reason);
+        connection.terminationStarted = true;
+        if (connections[peerKey] === connection) {
+            delete connections[peerKey];
+        }
+        cleanupConnection(peerKey, connection, reason);
+        notifyDisconnected(peerKey, reason, connection);
         try {
             if (typeof connection.connection.destroy === 'function') {
                 connection.connection.destroy();
             } else {
-                closePeer(peerKey, reason, connection);
+                log.info(`* connection closed with: ${connection.peerName} (${connection.nodeName}) *`);
             }
         } catch (error) {
             log.warn({ error, peer: shortName(peerKey), reason }, 'failed to destroy peer connection');
-            closePeer(peerKey, reason, connection);
         }
     }
 
-    function quarantinePeer(
+    function reportProtocolViolation(
         peerKey: string,
         reason: string,
         expectedConnection: ConnectionInfo,
         details: Record<string, unknown> = {},
     ): void {
         const connection = connections[peerKey];
-        if (!connection || connection !== expectedConnection || connection.legacyTransportQuarantined) {
+        if (!connection
+            || connection !== expectedConnection
+            || connection.protocolViolationReported
+            || connection.terminationStarted) {
             return;
         }
 
-        connection.legacyTransportQuarantined = true;
-        connection.inboundBuffer = Buffer.alloc(0);
-        options.syncStats.legacyTransportConnectionsQuarantined += 1;
-        try {
-            options.onQuarantined(peerKey, reason, connection);
-        } catch (error) {
-            log.error({ error, peer: shortName(peerKey), reason }, 'peer quarantine callback failed');
-        }
-        log.warn({ peer: shortName(peerKey), ...details }, 'quarantined peer using an unsupported transport framing version');
+        connection.protocolViolationReported = true;
+        recordProtocolStrike(options.syncStats, reason,
+            typeof details.validationError === 'string' ? details.validationError : '');
+        const restriction = admission.noteViolation(peerKey, reason);
+        options.syncStats.protocolViolationCooldowns += 1;
+        log.warn({
+            peer: shortName(peerKey),
+            reason,
+            strikes: restriction.strikes,
+            cooldownMs: restriction.until - now(),
+            ...details,
+        }, 'disconnecting peer after protocol violation');
+        terminatePeer(peerKey, reason, connection);
     }
 
-    function writeFramedJson(connection: HyperswarmConnection, json: string): void {
-        const framed = encodeFramedMessage(json, maxMessageBytes);
-        options.syncStats.bytesSent += framed.length;
-        connection.write(framed);
+    function closeIncompatiblePeer(
+        peerKey: string,
+        reason: string,
+        expectedConnection: ConnectionInfo,
+        details: Record<string, unknown> = {},
+    ): void {
+        const restriction = admission.noteCompatibilityMismatch(peerKey, reason);
+        options.syncStats.wireVersionIncompatibilityClosures += 1;
+        log.warn({
+            peer: shortName(peerKey),
+            reason,
+            retryAfterMs: restriction.until - now(),
+            ...details,
+        }, 'disconnecting incompatible hyperswarm peer');
+        terminatePeer(peerKey, reason, expectedConnection);
+    }
+
+    function writeTask(peerKey: string, connection: ConnectionInfo, task: PendingWrite): void {
+        const complete = (): void => {
+            if (task.settled) {
+                return;
+            }
+            settleWrite(peerKey, connection, task);
+        };
+        const fail = (): void => {
+            if (!task.settled) {
+                terminatePeer(peerKey, 'outbound_write_failed', connection);
+            }
+        };
+
+        task.timer = setTimeout(() => {
+            terminatePeer(peerKey, 'outbound_write_timeout', connection);
+        }, writeTimeoutMs);
+
+        try {
+            options.syncStats.bytesSent += task.framed.length;
+            const writable = connection.connection.write(task.framed);
+            if (connection.connection.flush) {
+                Promise.resolve(connection.connection.flush()).then(
+                    flushed => flushed === false ? fail() : complete(),
+                    fail,
+                );
+            }
+            else if (writable === false) {
+                connection.connection.once('drain', () => {
+                    complete();
+                });
+            }
+            else {
+                complete();
+            }
+        }
+        catch {
+            fail();
+        }
+    }
+
+    function processWriter(peerKey: string, connection: ConnectionInfo): void {
+        const state = getWriterState(connection);
+        if (state.closed || state.active || state.queue.length === 0) {
+            return;
+        }
+        if (!accepting || connections[peerKey] !== connection || connection.terminationStarted) {
+            closeWriter(peerKey, connection, 'connection_unavailable');
+            return;
+        }
+        const task = state.queue.shift()!;
+        state.active = task;
+        writeTask(peerKey, connection, task);
+    }
+
+    function enqueueWrite(
+        peerKey: string,
+        message: HyperMessage,
+        expectedConnection?: ConnectionInfo,
+        allowBeforeInitialPing = false,
+    ): { accepted: false } | { accepted: true; completion: Promise<void> } {
+        const connection = connections[peerKey];
+        if (!accepting
+            || !connection
+            || (expectedConnection && connection !== expectedConnection)
+            || connection.terminationStarted
+            || (!allowBeforeInitialPing && !connection.initialPingSent)) {
+            return { accepted: false };
+        }
+
+        try {
+            const envelope = validateHyperMessageEnvelope(message);
+            if (!envelope.ok) {
+                throw new Error(envelope.reason);
+            }
+            const payload = validateHyperMessagePayload(message, options.payloadLimits);
+            if (!payload.ok) {
+                throw new Error(payload.reason);
+            }
+            const framed = encodeFramedMessage(JSON.stringify(message), maxMessageBytes);
+            const state = getWriterState(connection);
+            if (state.closed
+                || state.reservedBytes + framed.length > maxOutboundBytesPerConnection
+                || totalOutboundBytes + framed.length > maxOutboundBytesTotal) {
+                if (!state.closed) {
+                    options.syncStats.hardening.outboundBudgetRefusals += 1;
+                }
+                return { accepted: false };
+            }
+            state.reservedBytes += framed.length;
+            totalOutboundBytes += framed.length;
+
+            let resolve!: () => void;
+            let reject!: (error: Error) => void;
+            const completion = new Promise<void>((res, rej) => {
+                resolve = res;
+                reject = rej;
+            });
+            state.queue.push({
+                bytes: framed.length,
+                framed,
+                settled: false,
+                resolve,
+                reject,
+                timer: null,
+            });
+            processWriter(peerKey, connection);
+            return { accepted: true, completion };
+        } catch (error) {
+            log.error({ error, peer: shortName(peerKey), type: message.type }, 'failed to send hyperswarm message');
+            return { accepted: false };
+        }
     }
 
     function send(
@@ -238,19 +614,35 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         message: HyperMessage,
         expectedConnection?: ConnectionInfo,
     ): boolean {
-        const connection = connections[peerKey];
-        if (!connection
-            || (expectedConnection && connection !== expectedConnection)
-            || connection.legacyTransportQuarantined
-            || (message.type !== 'ping' && !connection.initialPingSent)) {
+        const queued = enqueueWrite(peerKey, message, expectedConnection);
+        if (!queued.accepted) {
             return false;
         }
+        queued.completion.catch(error => {
+            log.debug({ error, peer: shortName(peerKey), type: message.type }, 'hyperswarm control write failed');
+        });
+        return true;
+    }
 
+    async function sendAwaited(
+        peerKey: string,
+        message: HyperMessage,
+        expectedConnection?: ConnectionInfo,
+        allowBeforeInitialPing = false,
+    ): Promise<boolean> {
+        const queued = enqueueWrite(peerKey, message, expectedConnection, allowBeforeInitialPing);
+        if (!queued.accepted) {
+            return false;
+        }
         try {
-            writeFramedJson(connection.connection, JSON.stringify(message));
+            await queued.completion;
+            if (message.type === 'queue') {
+                options.syncStats.hardening.gossipOperationsRelayed += message.operations.length;
+            }
             return true;
-        } catch (error) {
-            log.error({ error, peer: shortName(peerKey), type: message.type }, 'failed to send hyperswarm message');
+        }
+        catch (error) {
+            log.debug({ error, peer: shortName(peerKey), type: message.type }, 'hyperswarm bulk write failed');
             return false;
         }
     }
@@ -258,44 +650,57 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
     async function sendInitialPing(peerKey: string, expectedConnection?: ConnectionInfo): Promise<void> {
         const ping = await options.buildInitialPing();
         const connection = connections[peerKey];
-        if (!connection || (expectedConnection && connection !== expectedConnection)) {
+        if (!connection
+            || (expectedConnection && connection !== expectedConnection)
+            || connection.terminationStarted) {
             return;
         }
-        if (send(peerKey, ping, connection)) {
+        if (await sendAwaited(peerKey, ping, connection, true)) {
             connection.initialPingSent = true;
             log.debug(`* sent ping to: ${shortName(peerKey)}`);
+        } else {
+            terminatePeer(peerKey, 'initial_ping_send_failed', connection);
         }
     }
 
     async function waitForInitialPing(peerKey: string, connection: ConnectionInfo): Promise<boolean> {
         await connection.initialPingPromise;
         return connections[peerKey] === connection
-            && connection.initialPingSent
-            && !connection.legacyTransportQuarantined;
+            && !connection.terminationStarted
+            && connection.initialPingSent;
     }
 
     async function handlePing(peerKey: string, message: PingMessage, connection: ConnectionInfo): Promise<void> {
-        const peerTransportFramingVersion = Number.isInteger(message.transportFramingVersion)
-            ? Number(message.transportFramingVersion)
+        const peerWireVersion = Number.isInteger(message.version)
+            ? Number(message.version)
             : null;
-        connection.peerTransportFramingVersion = peerTransportFramingVersion;
-        if (peerTransportFramingVersion !== options.framingVersion) {
-            quarantinePeer(
+        connection.wireVersion = peerWireVersion;
+        if (peerWireVersion !== options.wireVersion) {
+            closeIncompatiblePeer(
                 peerKey,
-                peerTransportFramingVersion === null
-                    ? 'missing_transport_framing_version'
-                    : 'unsupported_transport_framing_version',
+                peerWireVersion === null
+                    ? 'missing_wire_version'
+                    : 'unsupported_wire_version',
                 connection,
                 {
-                    peerTransportFramingVersion,
-                    requiredTransportFramingVersion: options.framingVersion,
+                    peerWireVersion,
+                    requiredWireVersion: options.wireVersion,
                 },
             );
             return;
         }
 
-        clearMalformedPeer(peerKey, 'valid_ping');
-        connection.nodeName = typeof message.node === 'string' ? message.node : 'anon';
+        clearInitialPingDeadline(connection);
+        const receivedAt = now();
+        connection.lastSeen = receivedAt;
+        if (connection.initialPingReceived
+            && (receivedAt - connection.lastProcessedPingAt) < pingIntervalMs) {
+            options.syncStats.hardening.pingsSkipped += 1;
+            return;
+        }
+        connection.initialPingReceived = true;
+        connection.lastProcessedPingAt = receivedAt;
+        connection.nodeName = message.name ?? 'anon';
         await options.onPing(peerKey, message, connection);
     }
 
@@ -307,31 +712,32 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         const connection = connections[peerKey];
         if (!connection
             || (expectedConnection && connection !== expectedConnection)
-            || connection.legacyTransportQuarantined) {
+            || connection.terminationStarted) {
             return;
         }
 
-        if (!isHyperMessage(value)) {
-            const messageType = value && typeof value === 'object' && 'type' in value
-                ? (value as { type?: unknown }).type
-                : undefined;
-            log.warn(`unknown message type: ${String(messageType)}`);
+        const envelope = validateHyperMessageEnvelope(value, options.wireVersion);
+        if (!envelope.ok) {
+            reportProtocolViolation(peerKey, 'invalid_message_envelope', connection, {
+                validationError: envelope.reason,
+            });
             return;
         }
 
-        const message = value;
-        connection.lastSeen = Date.now();
-        log.debug(`received ${message.type} from: ${shortName(peerKey)} (${typeof message.node === 'string' ? message.node : 'anon'})`);
+        const message = envelope.value;
+        connection.lastSeen = now();
+        log.debug(`received ${message.type} from: ${shortName(peerKey)} (${connection.nodeName})`);
 
         if (message.type === 'ping') {
             await handlePing(peerKey, message, connection);
             return;
         }
 
-        if (connection.peerTransportFramingVersion !== options.framingVersion) {
-            quarantinePeer(peerKey, 'missing_transport_framing_version', connection, {
+        if (!connection.initialPingReceived
+            || connection.wireVersion !== options.wireVersion) {
+            reportProtocolViolation(peerKey, 'message_before_compatible_ping', connection, {
                 messageType: message.type,
-                requiredTransportFramingVersion: options.framingVersion,
+                requiredWireVersion: options.wireVersion,
             });
             return;
         }
@@ -340,8 +746,15 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         }
 
         if (message.type === 'queue') {
-            await options.onQueue(peerKey, message, connection);
-        } else if (isSyncMessage(message)) {
+            const payload = validateQueueMessagePayload(message, options.payloadLimits);
+            if (!payload.ok) {
+                reportProtocolViolation(peerKey, 'invalid_queue_payload', connection, {
+                    validationError: payload.reason,
+                });
+                return;
+            }
+            await options.onQueue(peerKey, message, connection, payload.value);
+        } else {
             await options.onSyncMessage(peerKey, message, connection);
         }
     }
@@ -354,7 +767,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         const connection = connections[peerKey];
         if (!connection
             || (expectedConnection && connection !== expectedConnection)
-            || connection.legacyTransportQuarantined) {
+            || connection.terminationStarted) {
             return;
         }
 
@@ -365,28 +778,34 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         } catch {
             const jsonPreview = json.length > 80 ? `${json.slice(0, 40)}...${json.slice(-40)}` : json;
             log.warn({ peer: connection.peerName, jsonPreview }, 'received invalid hyperswarm JSON message');
-            noteMalformedPeer(peerKey, 'invalid_hyperswarm_json_message');
-            terminatePeer(peerKey, 'invalid_hyperswarm_json_message', connection);
+            reportProtocolViolation(peerKey, 'invalid_hyperswarm_json_message', connection);
             return;
         }
 
         await routeMessage(peerKey, value, connection);
     }
 
-    async function processInboundPeerData(
-        peerKey: string,
-        chunk: Buffer | string,
-        expectedConnection?: ConnectionInfo,
-    ): Promise<void> {
-        const connection = connections[peerKey];
-        if (!connection || (expectedConnection && connection !== expectedConnection)) {
+    function armPartialFrameDeadline(peerKey: string, connection: ConnectionInfo): void {
+        const state = getInboundState(connection);
+        if (state.partialFrameTimer || connection.inboundBuffer.length === 0) {
             return;
         }
+        state.partialFrameTimer = setTimeout(() => {
+            state.partialFrameTimer = null;
+            options.syncStats.hardening.frameAssemblyTimeouts += 1;
+            terminatePeer(peerKey, 'partial_frame_timeout', connection);
+        }, frameAssemblyTimeoutMs);
+    }
 
-        const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
-        options.syncStats.bytesReceived += incoming.length;
-        if (connection.legacyTransportQuarantined) {
-            connection.lastSeen = Date.now();
+    async function processAdmittedPeerData(
+        peerKey: string,
+        incoming: Buffer,
+        expectedConnection: ConnectionInfo,
+    ): Promise<void> {
+        const connection = connections[peerKey];
+        if (!connection
+            || connection !== expectedConnection
+            || connection.terminationStarted) {
             return;
         }
 
@@ -397,100 +816,113 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         while (connection.inboundBuffer.length > 0) {
             const parsed = decodeFramedMessages(connection.inboundBuffer, maxMessageBytes);
             if (parsed.error) {
-                const legacy = decodeLegacyJsonMessages(connection.inboundBuffer, maxMessageBytes, 1);
-                if (!legacy.error) {
-                    if (legacy.messages.length === 0) {
-                        connection.inboundBuffer = legacy.remaining;
-                        return;
-                    }
-
-                    const message = legacy.messages[0];
-                    try {
-                        const legacyMessage = JSON.parse(message.toString('utf8')) as { type?: unknown };
-                        if (typeof legacyMessage.type !== 'string') {
-                            throw new Error('unframed message type must be a string');
-                        }
-                        if (connection.initialInboundMessageReceived) {
-                            quarantinePeer(peerKey, 'legacy_unframed_transport', connection, {
-                                messageType: legacyMessage.type,
-                            });
-                            return;
-                        }
-                        if (legacyMessage.type !== 'ping') {
-                            throw new Error('initial unframed message must be a ping');
-                        }
-                    } catch (error) {
-                        log.warn({ error, peer: shortName(peerKey) }, 'received invalid unframed initial hyperswarm ping');
-                        noteMalformedPeer(peerKey, 'invalid_unframed_initial_ping');
-                        terminatePeer(peerKey, 'invalid_unframed_initial_ping', connection);
-                        return;
-                    }
-
-                    connection.initialInboundMessageReceived = true;
-                    connection.inboundBuffer = legacy.remaining;
-                    await receiveJson(peerKey, message, connection);
-                    if (connections[peerKey] !== connection) {
-                        return;
-                    }
-                    continue;
-                }
-            }
-
-            if (parsed.error) {
                 log.warn({
                     peer: shortName(peerKey),
                     pendingBytes: connection.inboundBuffer.length,
                     error: parsed.error,
                 }, 'received malformed framed hyperswarm message');
-                noteMalformedPeer(peerKey, 'malformed_framed_message');
-                terminatePeer(peerKey, 'malformed_framed_message', connection);
+                reportProtocolViolation(peerKey, 'malformed_framed_message', connection, {
+                    framingError: parsed.error,
+                });
                 return;
             }
 
             if (parsed.messages.length === 0) {
                 connection.inboundBuffer = parsed.remaining;
+                armPartialFrameDeadline(peerKey, connection);
                 return;
             }
 
-            connection.initialInboundMessageReceived = true;
+            clearPartialFrameDeadline(connection);
             connection.inboundBuffer = parsed.remaining;
-            for (const message of parsed.messages) {
-                await receiveJson(peerKey, message, connection);
-                if (connections[peerKey] !== connection) {
-                    return;
+            const decodedBytes = parsed.messages.reduce(
+                (bytes, message) => bytes + FRAME_HEADER_BYTES + message.length,
+                0,
+            );
+            try {
+                for (const message of parsed.messages) {
+                    await receiveJson(peerKey, message, connection);
+                    if (connections[peerKey] !== connection || connection.terminationStarted) {
+                        return;
+                    }
                 }
+            }
+            finally {
+                // Decoded slices share the input buffer, so retain its accounting until the batch is done.
+                releaseInboundBytes(connection, decodedBytes);
             }
         }
     }
 
-    function queueInboundPeerData(peerKey: string, chunk: Buffer | string, connection: ConnectionInfo): void {
-        if (connections[peerKey] !== connection) {
-            return;
+    function queueInboundPeerData(
+        peerKey: string,
+        chunk: Buffer | string,
+        connection: ConnectionInfo,
+    ): Promise<void> {
+        if (!accepting || connections[peerKey] !== connection || connection.terminationStarted) {
+            return Promise.resolve();
         }
 
-        if (connection.legacyTransportQuarantined) {
-            const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
-            options.syncStats.bytesReceived += incoming.length;
-            connection.lastSeen = Date.now();
-            return;
+        const bytes = typeof chunk === 'string'
+            ? Buffer.byteLength(chunk, 'utf8')
+            : chunk.length;
+        if (bytes === 0) {
+            return connection.inboundReceiveChain;
+        }
+        const state = getInboundState(connection);
+        if (state.reservedBytes + bytes > maxInboundBytesPerConnection
+            || totalInboundBytes + bytes > maxInboundBytesTotal) {
+            options.syncStats.hardening.inboundBudgetTerminations += 1;
+            terminatePeer(peerKey, 'inbound_capacity_exceeded', connection);
+            return Promise.resolve();
         }
 
+        state.reservedBytes += bytes;
+        totalInboundBytes += bytes;
+        state.queuedChunks += 1;
+        options.syncStats.bytesReceived += bytes;
+        pauseConnection(connection);
+        const incoming = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : Buffer.from(chunk);
         connection.inboundReceiveChain = connection.inboundReceiveChain
-            .then(() => processInboundPeerData(peerKey, chunk, connection))
+            .then(() => processAdmittedPeerData(peerKey, incoming, connection))
             .catch(error => {
                 log.error({ error, peer: shortName(peerKey) }, 'inbound hyperswarm message processing failed');
                 terminatePeer(peerKey, 'inbound_processing_failed', connection);
+            })
+            .finally(() => {
+                const current = getInboundState(connection);
+                current.queuedChunks = Math.max(0, current.queuedChunks - 1);
+                resumeConnection(peerKey, connection);
             });
+        return connection.inboundReceiveChain;
     }
 
     function addConnection(connection: HyperswarmConnection): void {
         const peerKey = b4a.toString(connection.remotePublicKey, 'hex');
         const peerName = shortName(peerKey);
-        if (rejectMalformedPeerIfCoolingDown(peerKey, connection)) {
+        if (!accepting) {
+            destroyUnadmitted(connection, 'transport_shutting_down');
+            return;
+        }
+        if (rejectRestrictedPeer(peerKey, connection)) {
             return;
         }
 
         const previous = connections[peerKey];
+        if (drainingConnections.has(peerKey)) {
+            destroyUnadmitted(connection, 'connection_replacement_pending');
+            return;
+        }
+        if (trackedConnections.size >= maxTrackedConnections) {
+            options.syncStats.hardening.connectionCapacityRefusals += 1;
+            destroyUnadmitted(connection, 'connection_drain_capacity');
+            return;
+        }
+        if (!previous && Object.keys(connections).length >= maxConnections) {
+            options.syncStats.hardening.connectionCapacityRefusals += 1;
+            destroyUnadmitted(connection, 'connection_capacity');
+            return;
+        }
         if (previous) {
             terminatePeer(peerKey, 'connection_replaced', previous);
         }
@@ -501,6 +933,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             requireInitialPing: true,
         });
         connections[peerKey] = state;
+        trackedConnections.add(state);
 
         connection.once('close', () => closePeer(peerKey, 'connection_closed', state));
         connection.once('error', error => {
@@ -510,8 +943,9 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
             log.warn({ error, peer: peerName }, 'hyperswarm peer connection error');
             terminatePeer(peerKey, 'connection_error', state);
         });
-        connection.on('data', data => queueInboundPeerData(peerKey, data, state));
+        connection.on('data', data => { void queueInboundPeerData(peerKey, data, state); });
 
+        startInitialPingDeadline(peerKey, state);
         state.initialPingPromise = sendInitialPing(peerKey, state).catch(error => {
             log.error({ error, peer: peerName }, 'failed to build initial hyperswarm ping');
             terminatePeer(peerKey, 'initial_ping_failed', state);
@@ -519,10 +953,34 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         log.info(`received connection from: ${peerName}`);
     }
 
-    async function relay(message: HyperMessage): Promise<void> {
+    async function relay(message: HyperMessage, excludedPeerKey?: string): Promise<void> {
+        const bulk = message.type === 'queue'
+            || message.type === 'ordered_catchup_push'
+            || message.type === 'ops_push';
+        const pending: Promise<unknown>[] = [];
+        const failedRecipients: Array<[string, ConnectionInfo]> = [];
         for (const peerKey of Object.keys(connections)) {
-            if (!message.relays.includes(peerKey)) {
+            const connection = connections[peerKey];
+            if (!connection || peerKey === excludedPeerKey) continue;
+            if (bulk) {
+                pending.push(sendAwaited(peerKey, message, connection).then(delivered => {
+                    if (!delivered) failedRecipients.push([peerKey, connection]);
+                }));
+            }
+            else {
                 send(peerKey, message);
+            }
+        }
+        await Promise.allSettled(pending);
+        if (message.type === 'queue') {
+            for (const [peerKey, connection] of failedRecipients) {
+                if (connections[peerKey] !== connection || connection.terminationStarted) continue;
+                try {
+                    options.onRelayFailure?.(peerKey, connection);
+                }
+                catch (error) {
+                    log.error({ error, peer: shortName(peerKey) }, 'queue relay failure callback failed');
+                }
             }
         }
     }
@@ -548,27 +1006,65 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
         getPeerKeys(): string[] {
             return Object.keys(connections);
         },
-        processInboundPeerData,
+        processInboundPeerData(peerKey: string, chunk: Buffer | string): Promise<void> {
+            const connection = connections[peerKey];
+            return connection
+                ? queueInboundPeerData(peerKey, chunk, connection)
+                : Promise.resolve();
+        },
         receiveMessage(peerKey: string, message: unknown): Promise<void> {
             return routeMessage(peerKey, message);
         },
         relay,
         reset(): void {
             for (const peerKey of Object.keys(connections)) {
-                delete connections[peerKey];
+                const connection = connections[peerKey];
+                terminatePeer(peerKey, 'transport_reset', connection);
             }
-            for (const peerKey of Object.keys(malformedPeers)) {
-                delete malformedPeers[peerKey];
-            }
+            admission.reset();
         },
         sendInitialPing,
         sendToPeer(peerKey: string, message: HyperMessage): boolean {
             return send(peerKey, message);
         },
+        sendBulkToPeer(peerKey: string, message: HyperMessage): Promise<boolean> {
+            return sendAwaited(peerKey, message);
+        },
         setConnection(peerKey: string, connection: ConnectionInfo): void {
             connections[peerKey] = connection;
+            trackedConnections.add(connection);
         },
+        stopAdmission(): void {
+            accepting = false;
+        },
+        shutdown(): Promise<void> {
+            if (!shutdownPromise) {
+                accepting = false;
+                const tracked = [...trackedConnections];
+                for (const [peerKey, connection] of Object.entries(connections)) {
+                    terminatePeer(peerKey, 'transport_shutdown', connection);
+                }
+                shutdownPromise = Promise.allSettled(tracked.flatMap(connection => [
+                    connection.inboundReceiveChain,
+                    connection.initialPingPromise,
+                ])).then(() => undefined);
+            }
+            return shutdownPromise;
+        },
+        getAccounting(): TransportAccounting {
+            return {
+                inboundBytes: totalInboundBytes,
+                outboundBytes: totalOutboundBytes,
+                connections: Object.keys(connections).length,
+            };
+        },
+        getAdmissionCounts: admission.counts,
+        getSecurityMetrics() {
+            return { ...admission.counts(), evictions: admission.evictions, trackedConnections: trackedConnections.size };
+        },
+        reportProtocolViolation,
         terminatePeer,
+        waitForIdleWrites,
         waitForInitialPing,
     };
 }

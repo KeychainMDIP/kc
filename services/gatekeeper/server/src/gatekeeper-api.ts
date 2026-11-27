@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import rateLimit from 'express-rate-limit';
 
-import Gatekeeper from '@mdip/gatekeeper';
+import Gatekeeper, {
+    MAX_OPERATION_PAGE_BYTES,
+    MAX_OPERATION_PAGE_COUNT,
+    QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT,
+} from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
@@ -14,6 +18,7 @@ import DbPostgres from '@mdip/gatekeeper/db/postgres';
 import {
     ExpirationContinuation,
     Operation,
+    QueueReadOptions,
     ResolveDIDOptions,
 } from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
@@ -1614,10 +1619,30 @@ v1router.post('/batch/import', trackedRoute(async (req, res) => {
  *         description: >
  *           The name of the registry whose queue is being retrieved.
  *           Valid values may include "local", "hyperswarm", "TBTC", "TFTC", etc.
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 300
+ *           default: 300
+ *         description: Maximum operations to return in the head page.
+ *       - in: query
+ *         name: maxBytes
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 524288
+ *           default: 524288
+ *         description: >
+ *           Maximum exact UTF-8 byte length of a non-empty serialized operation
+ *           array, including brackets and commas. An empty queue still returns [].
  *
  *     responses:
  *       200:
- *         description: An array of queued event objects for the specified registry.
+ *         description: The bounded head page of queued event objects for the specified registry.
  *         content:
  *           application/json:
  *             schema:
@@ -1658,6 +1683,18 @@ v1router.post('/batch/import', trackedRoute(async (req, res) => {
  *                     type: string
  *                     description: The DID that this queue event references (often identical to `operation.did`).
  *
+ *       400:
+ *         description: Invalid queue page limit.
+ *       409:
+ *         description: The head operation exceeds the requested queue page byte limit.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   enum: [queue_operation_exceeds_page_limit]
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -1667,9 +1704,33 @@ v1router.post('/batch/import', trackedRoute(async (req, res) => {
  */
 v1router.get('/queue/:registry', trackedRoute(async (req, res) => {
     try {
-        const queue = await gatekeeper.getQueue(req.params.registry);
+        const options: QueueReadOptions = {};
+        for (const [name, maximum] of [
+            ['limit', MAX_OPERATION_PAGE_COUNT],
+            ['maxBytes', MAX_OPERATION_PAGE_BYTES],
+        ] as const) {
+            const raw = req.query[name];
+            if (raw === undefined) {
+                continue;
+            }
+            if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) {
+                res.status(400).json({ error: `invalid_${name}` });
+                return;
+            }
+            const value = Number(raw);
+            if (!Number.isSafeInteger(value) || value > maximum) {
+                res.status(400).json({ error: `invalid_${name}` });
+                return;
+            }
+            options[name] = value;
+        }
+        const queue = await gatekeeper.getQueue(req.params.registry, options);
         res.json(queue);
     } catch (error: any) {
+        if (error?.code === QUEUE_OPERATION_EXCEEDS_PAGE_LIMIT) {
+            res.status(409).json({ error: error.code });
+            return;
+        }
         log.error({ error }, 'Request error');
         res.status(500).send(error.toString());
     }

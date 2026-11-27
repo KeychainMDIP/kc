@@ -3,23 +3,30 @@ import { childLogger } from '@mdip/common/logger';
 import type { SyncStoreCursor } from '../db/types.js';
 import type { OperationSyncStore } from '../db/types.js';
 import {
+    MAX_NEGENTROPY_FRAME_BYTES,
+    MAX_NEGENTROPY_WINDOW_RECORDS,
+} from '../protocol-limits.js';
+import { MDIP_EPOCH_SECONDS } from '../sync-mapping.js';
+import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
     buildRoundCapSplitWindow,
-    MDIP_EPOCH_SECONDS,
+    cloneCursor,
+    cloneWindow,
+    cloneWindowStats,
 } from './windows.js';
 
 const log = childLogger({ service: 'hyperswarm-negentropy-adapter' });
 
 const MIN_FRAME_SIZE_LIMIT = 4096;
 const DEFAULT_ITERATE_LIMIT = 1000;
-const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
 const require = createRequire(import.meta.url);
 
-type NegentropyFrameValue = string | Uint8Array;
+type NegentropyFrameValue = Uint8Array;
 type NegentropyFrameMessage = NegentropyFrameValue | null;
-type NegentropyFrameList = Array<NegentropyFrameValue>;
+type NegentropyIdValue = string | Uint8Array;
+type NegentropyFrameList = Array<NegentropyIdValue>;
 type NegentropyStorageValue = string | Uint8Array | Buffer;
 
 interface NegentropyInstance {
@@ -27,7 +34,7 @@ interface NegentropyInstance {
     initiate(): Promise<NegentropyFrameValue>;
     reconcile(
         msg: NegentropyFrameValue
-    ): Promise<[NegentropyFrameValue | null, Array<NegentropyFrameValue>, Array<NegentropyFrameValue>]>;
+    ): Promise<[NegentropyFrameValue | null, NegentropyFrameList, NegentropyFrameList]>;
 }
 
 interface NegentropyStorageVectorInstance {
@@ -44,7 +51,6 @@ export interface NegentropyAdapterOptions {
     syncStore: OperationSyncStore;
     frameSizeLimit?: number;
     iterateLimit?: number;
-    wantUint8ArrayOutput?: boolean;
     maxRecordsPerWindow?: number;
     maxRoundsPerSession?: number;
     deferInitialBuild?: boolean;
@@ -104,31 +110,6 @@ export interface NegentropyWindowSessionOptions {
     maxRoundsPerSession?: number;
 }
 
-function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
-    if (!cursor) {
-        return null;
-    }
-
-    return {
-        ts: cursor.ts,
-        id: cursor.id,
-    };
-}
-
-function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
-    return {
-        ...window,
-        after: cloneCursor(window.after) ?? undefined,
-    };
-}
-
-function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats {
-    return {
-        ...stats,
-        lastCursor: cloneCursor(stats.lastCursor),
-    };
-}
-
 export class NegentropyWindowEngine {
     private readonly ne: NegentropyInstance;
 
@@ -136,12 +117,9 @@ export class NegentropyWindowEngine {
         mod: NegentropyModule,
         snapshot: NegentropyWindowSnapshot,
         frameSizeLimit: number,
-        wantUint8ArrayOutput: boolean,
     ) {
         this.ne = new mod.Negentropy(snapshot.storage, frameSizeLimit);
-        if (wantUint8ArrayOutput) {
-            this.ne.wantUint8ArrayOutput = true;
-        }
+        this.ne.wantUint8ArrayOutput = true;
     }
 
     getInstance(): NegentropyInstance {
@@ -167,7 +145,6 @@ export default class NegentropyAdapter {
     private readonly syncStore: OperationSyncStore;
     private readonly frameSizeLimit: number;
     private readonly iterateLimit: number;
-    private readonly wantUint8ArrayOutput: boolean;
     private readonly maxRecordsPerWindow: number;
     private readonly maxRoundsPerSession: number;
     private readonly mod: NegentropyModule;
@@ -192,10 +169,9 @@ export default class NegentropyAdapter {
 
     constructor(options: NegentropyAdapterOptions) {
         this.syncStore = options.syncStore;
-        this.frameSizeLimit = options.frameSizeLimit ?? 0;
+        this.frameSizeLimit = options.frameSizeLimit ?? MAX_NEGENTROPY_FRAME_BYTES;
         this.iterateLimit = options.iterateLimit ?? DEFAULT_ITERATE_LIMIT;
-        this.wantUint8ArrayOutput = options.wantUint8ArrayOutput ?? false;
-        this.maxRecordsPerWindow = options.maxRecordsPerWindow ?? DEFAULT_MAX_RECORDS_PER_WINDOW;
+        this.maxRecordsPerWindow = options.maxRecordsPerWindow ?? MAX_NEGENTROPY_WINDOW_RECORDS;
         this.maxRoundsPerSession = options.maxRoundsPerSession ?? DEFAULT_MAX_ROUNDS_PER_SESSION;
         this.mod = loadNegentropyModule();
 
@@ -243,7 +219,6 @@ export default class NegentropyAdapter {
             this.mod,
             snapshot,
             this.frameSizeLimit,
-            this.wantUint8ArrayOutput,
         );
     }
 
@@ -415,21 +390,21 @@ export default class NegentropyAdapter {
         };
     }
 
-    async initiate(): Promise<string | Uint8Array> {
+    async initiate(): Promise<Uint8Array> {
         if (!this.currentEngine) {
             throw new Error('negentropy adapter not initialized');
         }
         return this.currentEngine.initiate();
     }
 
-    async reconcile(msg: string | Uint8Array): Promise<NegentropyReconcileResult> {
+    async reconcile(msg: Uint8Array): Promise<NegentropyReconcileResult> {
         if (!this.currentEngine) {
             throw new Error('negentropy adapter not initialized');
         }
         return this.currentEngine.reconcile(msg);
     }
 
-    async respond(msg: string | Uint8Array): Promise<string | Uint8Array | null> {
+    async respond(msg: Uint8Array): Promise<Uint8Array | null> {
         const result = await this.reconcile(msg);
         return result.nextMsg;
     }
@@ -530,7 +505,7 @@ export default class NegentropyAdapter {
         peerEngine: NegentropyWindowEngine,
         maxRounds: number,
     ): Promise<{ rounds: number; completed: boolean; cappedByRounds: boolean }> {
-        let msg: string | Uint8Array | null = await localEngine.initiate();
+        let msg: Uint8Array | null = await localEngine.initiate();
         let rounds = 0;
 
         while (msg !== null && rounds < maxRounds) {

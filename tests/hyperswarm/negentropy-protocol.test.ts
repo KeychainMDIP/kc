@@ -1,190 +1,94 @@
-import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
     buildOrderedCatchupCapabilities,
-    chooseConnectSyncMode,
-    chooseSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
-    extractOperationHashes,
     normalizeNegentropyIds,
     normalizePeerCapabilities,
+    parseRemoteWindow,
 } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
+import { MDIP_EPOCH_SECONDS } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 
 const h = (c: string) => c.repeat(64);
-
-function makeOp(hash: string): Operation {
-    return {
-        type: 'create',
-        signature: {
-            hash,
-            signed: '2026-02-11T00:00:00.000Z',
-            value: 'sig',
-        },
-    };
-}
+const nativeFrame = (value: string): Uint8Array => Buffer.from(value);
 
 describe('negentropy protocol helpers', () => {
-    const currentNegentropyVersion = 1;
-
-    it('encodes and decodes utf8 frame payloads', () => {
-        const payload = encodeNegentropyFrame('frame-message');
-        expect(payload.encoding).toBe('utf8');
-        expect(decodeNegentropyFrame(payload)).toBe('frame-message');
+    it('encodes native frames as canonical base64', () => {
+        const payload = encodeNegentropyFrame(nativeFrame('frame-message'));
+        expect(payload).toBe(Buffer.from('frame-message').toString('base64'));
+        expect(Buffer.from(decodeNegentropyFrame(payload))).toStrictEqual(Buffer.from('frame-message'));
     });
 
     it('encodes and decodes binary frame payloads', () => {
         const bytes = Uint8Array.from([1, 2, 3, 250]);
         const payload = encodeNegentropyFrame(bytes);
-        expect(payload.encoding).toBe('base64');
         const decoded = decodeNegentropyFrame(payload);
-        expect(Buffer.from(decoded as Uint8Array)).toStrictEqual(Buffer.from(bytes));
+        expect(Buffer.from(decoded)).toStrictEqual(Buffer.from(bytes));
     });
 
-    it('normalizes peer capabilities and chooses sync mode', () => {
+    it('normalizes absent peer capabilities', () => {
         const unknown = normalizePeerCapabilities();
-        expect(unknown).toMatchObject({
-            orderedCatchup: false,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: false,
-            operationCount: null,
-            orderedOperationCount: null,
-            latestSignedTimestamp: null,
+        expect(unknown).toStrictEqual({
+            ordered: null,
+            latestTs: null,
         });
-        expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
-
-        const unsupported = normalizePeerCapabilities({ negentropy: false });
-        expect(chooseSyncMode(unsupported, currentNegentropyVersion)).toBeNull();
-
-        const negentropy = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(chooseSyncMode(negentropy, currentNegentropyVersion)).toBe('negentropy');
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBeNull();
-
-        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
-        expect(chooseSyncMode(futureVersion, currentNegentropyVersion)).toBeNull();
     });
 
     it('normalizes ordered catch-up capability fields', () => {
         const capabilities = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 25,
-            orderedOperationCount: 25,
+            ordered: { count: 25, sourceReady: true },
         });
 
-        expect(capabilities).toMatchObject({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 25,
-            orderedOperationCount: 25,
+        expect(capabilities).toStrictEqual({
+            ordered: { count: 25, sourceReady: true },
+            latestTs: null,
         });
     });
 
-    it('normalizes invalid ordered catch-up counts to null', () => {
+    it('rejects incomplete or invalid ordered catch-up capabilities', () => {
         const capabilities = normalizePeerCapabilities({
-            orderedCatchup: true,
-            orderedCatchupVersion: Number.NaN,
-            orderedCatchupReady: true,
-            operationCount: -1,
-            orderedOperationCount: 1.5,
+            ordered: { count: -1, sourceReady: true },
         });
 
-        expect(capabilities).toMatchObject({
-            orderedCatchup: true,
-            orderedCatchupVersion: null,
-            orderedCatchupReady: true,
-            operationCount: null,
-            orderedOperationCount: null,
-        });
+        expect(capabilities.ordered).toBeNull();
+        expect(normalizePeerCapabilities({
+            ordered: { count: 1, sourceReady: undefined as never },
+        }).ordered).toBeNull();
     });
 
     it('normalizes the latest signed timestamp', () => {
-        expect(normalizePeerCapabilities({ latestSignedTimestamp: 2_000 }).latestSignedTimestamp).toBe(2_000);
+        expect(normalizePeerCapabilities({ latestTs: 2_000 }).latestTs).toBe(2_000);
 
-        for (const latestSignedTimestamp of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
+        for (const latestTs of [-1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1, '2000']) {
             expect(normalizePeerCapabilities({
-                latestSignedTimestamp: latestSignedTimestamp as number,
-            }).latestSignedTimestamp).toBeNull();
+                latestTs: latestTs as number,
+            }).latestTs).toBeNull();
         }
     });
 
     it('builds ordered catch-up readiness only when all operations are ordered', () => {
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 3,
             orderedOperationCount: 3,
         })).toStrictEqual({
-            orderedCatchup: true,
-            orderedCatchupVersion: 1,
-            orderedCatchupReady: true,
-            operationCount: 3,
-            orderedOperationCount: 3,
+            count: 3,
+            sourceReady: true,
         });
 
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 3,
             orderedOperationCount: 2,
-        })).toMatchObject({
-            orderedCatchupReady: false,
-            operationCount: 3,
-            orderedOperationCount: 2,
+        })).toStrictEqual({
+            count: 3,
+            sourceReady: false,
         });
 
         expect(buildOrderedCatchupCapabilities({
-            version: 1,
             operationCount: 0,
             orderedOperationCount: 0,
-        })).toMatchObject({
-            orderedCatchupReady: false,
-        });
-    });
-
-    it('chooses connect sync mode with explicit unavailability reasons', () => {
-        const missing = normalizePeerCapabilities();
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'missing_capabilities',
-        });
-
-        const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'negentropy_disabled',
-        });
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'version_mismatch',
-        });
-
-        const futureVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 2 });
-        expect(chooseConnectSyncMode(futureVersion, currentNegentropyVersion)).toStrictEqual({
-            mode: null,
-            reason: 'version_mismatch',
-        });
-
-        const supported = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion)).toStrictEqual({
-            mode: 'negentropy',
-            reason: 'negentropy_supported',
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false)).toStrictEqual({
-            mode: null,
-            reason: 'transport_framing_unsupported',
+        })).toStrictEqual({
+            count: 0,
+            sourceReady: false,
         });
     });
 
@@ -201,17 +105,31 @@ describe('negentropy protocol helpers', () => {
         expect(ids.every(id => NEG_SYNC_ID_RE.test(id))).toBe(true);
     });
 
-    it('extracts unique valid operation hashes', () => {
-        const a = h('a');
-        const b = h('b');
-        const operations: Operation[] = [
-            makeOp(a.toUpperCase()),
-            makeOp(b),
-            makeOp('invalid'),
-            { type: 'create' },
+    it('rejects malformed remote reconciliation windows', () => {
+        const window = {
+            until: MDIP_EPOCH_SECONDS + 2, limit: 16,
+        };
+        const malformed = [
+            null,
+            { ...window, until: Number.NaN },
+            { ...window, limit: Number.NaN },
+            { ...window, until: MDIP_EPOCH_SECONDS - 1 },
+            { ...window, limit: 25_001 },
+            { ...window, extra: true },
+            { ...window, after: { ts: 1.5, id: h('a') } },
+            { ...window, after: { ts: 1, id: null } },
+            { ...window, after: { ts: 1, id: 'invalid' } },
         ];
 
-        const hashes = extractOperationHashes(operations);
-        expect(hashes).toStrictEqual([a, b]);
+        for (const candidate of malformed) {
+            expect(parseRemoteWindow(candidate as never, 0)).toBeNull();
+        }
+        expect(parseRemoteWindow(window, 3)).toStrictEqual({
+            name: 'history_paged',
+            fromTs: MDIP_EPOCH_SECONDS,
+            toTs: window.until,
+            maxRecords: 16,
+            order: 3,
+        });
     });
 });

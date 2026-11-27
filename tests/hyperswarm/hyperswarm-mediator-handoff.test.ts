@@ -29,12 +29,15 @@ interface WireMessage {
     direction: TransportDirection;
     body: {
         type: string;
-        reason?: string;
+        outcome?: string;
         sessionId?: string;
-        windowId?: string;
+        windowSeq?: string;
         round?: number;
+        transferId?: number;
+        page?: number;
+        hasMore?: boolean;
         ids?: string[];
-        data?: Operation[];
+        operations?: Operation[];
     };
 }
 
@@ -67,11 +70,15 @@ function decodeWire(link: RecordingDuplexPair): WireMessage[] {
 function writeOperationPush(
     link: RecordingDuplexPair,
     base: WireMessage['body'],
-    operation: Operation,
+    operations: Operation[],
+    page: number,
+    hasMore: boolean,
 ): void {
     link.connectionA.write(encodeFramedMessage(JSON.stringify({
         ...base,
-        data: [operation],
+        page,
+        hasMore,
+        operations,
     })));
 }
 
@@ -82,7 +89,7 @@ function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
     }
     expect(finalOpen.body).toMatchObject({
         sessionId: expect.any(String),
-        windowId: expect.any(String),
+        windowSeq: expect.any(Number),
     });
     const finalMessage = messages.filter(message => (
         ['neg_open', 'neg_msg', 'ops_req', 'ops_push', 'neg_close'].includes(message.body.type)
@@ -91,10 +98,10 @@ function assertCompletedNegentropyExchange(messages: WireMessage[]): void {
     expect(finalMessage).toMatchObject({
         direction: finalOpen.direction,
         body: {
-            type: 'neg_close',
-            reason: 'complete',
+            type: 'neg_close', continuation: null,
+            outcome: 'complete',
             sessionId: finalOpen.body.sessionId,
-            windowId: finalOpen.body.windowId,
+            windowSeq: finalOpen.body.windowSeq,
         },
     });
     expect(finalMessage!.sequence).toBeGreaterThan(finalOpen.sequence);
@@ -213,7 +220,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             await nextTurn();
             await nextTurn();
             const closesWhileBlocked = decodeWire(driver.transport).filter(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ));
             const persistedWhileBlocked = await driver.storeB.count();
 
@@ -226,7 +233,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
             expect(await driver.storeB.count()).toBe(expectedIds.length);
             expect(decodeWire(driver.transport).some(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ))).toBe(true);
         },
     );
@@ -286,11 +293,9 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             });
             driver.nodeB.run(() => driver!.nodeB.mediator.__test.addConnection(peerKeyA, {
                 connection: replacement!.connectionA,
-                capabilities: normalizePeerCapabilities({
-                    negentropy: true,
-                    negentropyVersion: 1,
-                    orderedCatchup: false,
-                }),
+                initialPingReceived: true,
+                wireVersion: 2,
+                capabilities: normalizePeerCapabilities(),
             }));
             await driver.nodeB.run(
                 () => driver!.nodeB.mediator.__test.maybeStartPeerSync(peerKeyA, 'connect'),
@@ -351,20 +356,22 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const originalPush = decodeWire(driver.transport).at(-1)!.body;
         expect(driver.transport.dropNext()).toBe(true);
 
-        writeOperationPush(driver.transport, originalPush, asset);
+        writeOperationPush(driver.transport, originalPush, [asset], 0, true);
         await driver.transport.deliverNext();
         await eventually(() => driver!.nodeB.gatekeeperClient.processEvents.mock.calls.length >= 1);
         expect(await driver.storeB.has(operationId(asset))).toBe(false);
         expect(decodeWire(driver.transport).some(message => message.body.type === 'neg_close')).toBe(false);
+        expect(driver.transport.dropNext()).toBe(true);
 
-        writeOperationPush(driver.transport, originalPush, controller);
+        writeOperationPush(driver.transport, originalPush, [controller], 1, false);
         await driver.transport.deliverNext();
+        expect(driver.transport.dropNext()).toBe(true);
         await driver.driveUntilQuiescent(expectedIds);
 
         expect(await driver.storeB.has(operationId(asset))).toBe(true);
         expect(await driver.storeB.has(operationId(controller))).toBe(true);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
     });
 
@@ -397,7 +404,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const successfulCloses = decodeWire(driver.transport).filter(message => (
             message.direction === 'b-to-a'
             && message.body.type === 'neg_close'
-            && message.body.reason === 'complete'
+            && message.body.outcome === 'complete'
         ));
 
         expect(successfulCloses).toHaveLength(1);
@@ -421,13 +428,10 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(receiver.gatekeeperClient.processEvents).toHaveBeenCalledTimes(2);
         expect(await gatekeeperIds(receiver.gatekeeper)).toEqual(expectedIds);
         expect(await driver.storeB.count()).toBe(1);
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
-        ))).toBe(false);
         assertCompletedNegentropyExchange(decodeWire(driver.transport));
     });
 
-    it('retries an identical requested push after a transient import failure', async () => {
+    it('retries a transient import failure in a fresh session', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -440,18 +444,29 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        expect(await driver.transport.duplicateNext()).toBe(true);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent({
+            a: { gatekeeper: expectedIds, store: expectedIds },
+            b: { gatekeeper: [], store: [] },
+        });
+        expect(decodeWire(driver.transport).some(message => message.body.type === 'ops_ack')).toBe(false);
+        expect(decodeWire(driver.transport).some(message => (
+            message.body.type === 'neg_close' && message.body.outcome === 'incomplete'
+        ))).toBe(true);
+
+        await driver.reconnect();
+        await driver.startSync();
         await driver.driveUntilQuiescent(expectedIds);
 
         expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(2);
         expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
         expect(await driver.storeB.count()).toBe(1);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
     });
 
-    it('retries an identical requested push after a transient Gatekeeper database failure', async () => {
+    it('retries a transient Gatekeeper database failure in a fresh session', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -465,7 +480,14 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        expect(await driver.transport.duplicateNext()).toBe(true);
+        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent({
+            a: { gatekeeper: expectedIds, store: expectedIds },
+            b: { gatekeeper: [], store: [] },
+        });
+
+        await driver.reconnect();
+        await driver.startSync();
         await driver.driveUntilQuiescent(expectedIds);
 
         expect(getEvents.mock.calls.length).toBeGreaterThanOrEqual(2);
@@ -474,15 +496,12 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         const [stored] = await driver.storeB.getByIds(expectedIds);
         expect(stored.syncOrder).not.toBe(Number.MAX_SAFE_INTEGER);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'unresolved_operations'
-        ))).toBe(false);
     });
 
     it.each(['unready', 'busy'] as const)(
-        'retries an identical requested push when Gatekeeper is %s',
+        'recovers or retries when Gatekeeper is %s',
         async state => {
             const operations = await createIndependentOperations(1);
             const expectedIds = operationIds(operations);
@@ -500,18 +519,26 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
             await driver.startSync();
             await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-            expect(await driver.transport.duplicateNext()).toBe(true);
+            expect(await driver.transport.deliverNext()).toBe(true);
+            if (state === 'unready') {
+                await driver.driveUntilQuiescent({
+                    a: { gatekeeper: expectedIds, store: expectedIds },
+                    b: { gatekeeper: [], store: [] },
+                });
+                await driver.reconnect();
+                await driver.startSync();
+            }
             await driver.driveUntilQuiescent(expectedIds);
 
             expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
             expect(await driver.storeB.count()).toBe(1);
             expect(decodeWire(driver.transport).some(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
+                message.body.type === 'neg_close' && message.body.outcome === 'complete'
             ))).toBe(true);
         },
     );
 
-    it('retains accepted operations across sync-store failures and completes on an identical retry', async () => {
+    it('retains accepted operations across a sync-store failure and completes in a fresh session', async () => {
         const operations = await createIndependentOperations(1);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -521,34 +548,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             publicKeyB: Buffer.alloc(32, 0x11),
         });
         const upsertMany = jest.mocked(driver.storeB.upsertMany);
-        upsertMany
-            .mockRejectedValueOnce(new Error('transient sync-store failure'))
-            .mockRejectedValueOnce(new Error('transient sync-store failure'));
+        upsertMany.mockRejectedValueOnce(new Error('transient sync-store failure'));
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const push = driver.transport.peekNext();
-        if (!push || push.direction !== 'a-to-b') {
-            throw new Error('expected a pending A-to-B ops_push');
-        }
-        expect(driver.transport.dropNext()).toBe(true);
-
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            driver.transport.connectionA.write(push.raw);
-            expect(await driver.transport.deliverNext()).toBe(true);
-            expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
-            expect(await driver.storeB.count()).toBe(0);
-            expect(decodeWire(driver.transport).some(message => (
-                message.body.type === 'neg_close' && message.body.reason === 'complete'
-            ))).toBe(false);
-        }
-
-        driver.transport.connectionA.write(push.raw);
         expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.driveUntilQuiescent({
+            a: { gatekeeper: expectedIds, store: expectedIds },
+            b: { gatekeeper: expectedIds, store: [] },
+        });
+        expect(await driver.storeB.count()).toBe(0);
+
+        await driver.reconnect();
+        await driver.startSync();
         await driver.driveUntilQuiescent(expectedIds);
 
-        expect(upsertMany).toHaveBeenCalledTimes(3);
-        expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(3);
+        expect(upsertMany).toHaveBeenCalledTimes(2);
+        expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(2);
         const processResults = await Promise.all(
             driver.nodeB.gatekeeperClient.processEvents.mock.results
                 .map(result => result.value as Promise<ProcessEventsResult>),
@@ -557,68 +573,8 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
         expect(processResults.slice(1).every(result => (result.added ?? 0) === 0)).toBe(true);
         expect(await driver.storeB.count()).toBe(1);
         expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
+            message.body.type === 'neg_close' && message.body.outcome === 'complete'
         ))).toBe(true);
-    });
-
-    it('retries only retained operations named by the current push', async () => {
-        const operations = await createIndependentOperations(2);
-        const expectedIds = operationIds(operations);
-        driver = await createMediatorDriver({
-            operationsA: operations,
-            operationsB: [],
-            publicKeyA: Buffer.alloc(32, 0x22),
-            publicKeyB: Buffer.alloc(32, 0x11),
-        });
-        const upsertMany = jest.mocked(driver.storeB.upsertMany);
-        const upsertManyImplementation = upsertMany.getMockImplementation();
-        if (!upsertManyImplementation) {
-            throw new Error('tracked node B upsertMany implementation is unavailable');
-        }
-        const attempts: string[][] = [];
-        upsertMany
-            .mockImplementationOnce(async records => {
-                attempts.push(records.map(record => record.id).sort());
-                throw new Error('transient sync-store failure');
-            })
-            .mockImplementationOnce(async records => {
-                attempts.push(records.map(record => record.id).sort());
-                throw new Error('transient sync-store failure');
-            })
-            .mockImplementation(async records => {
-                attempts.push(records.map(record => record.id).sort());
-                return upsertManyImplementation(records);
-            });
-
-        await driver.startSync();
-        await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const originalPush = decodeWire(driver.transport).at(-1)!.body;
-        expect(driver.transport.dropNext()).toBe(true);
-
-        writeOperationPush(driver.transport, originalPush, operations[0]);
-        expect(await driver.transport.deliverNext()).toBe(true);
-        writeOperationPush(driver.transport, originalPush, operations[1]);
-        expect(await driver.transport.deliverNext()).toBe(true);
-
-        expect(attempts).toStrictEqual([[operationId(operations[0])], [operationId(operations[1])]]);
-        expect(await gatekeeperIds(driver.nodeB.gatekeeper)).toStrictEqual(expectedIds);
-        expect(await driver.storeB.count()).toBe(0);
-
-        writeOperationPush(driver.transport, originalPush, operations[0]);
-        expect(await driver.transport.deliverNext()).toBe(true);
-        expect(await driver.storeB.has(operationId(operations[0]))).toBe(true);
-        expect(await driver.storeB.has(operationId(operations[1]))).toBe(false);
-
-        writeOperationPush(driver.transport, originalPush, operations[1]);
-        expect(await driver.transport.deliverNext()).toBe(true);
-        await driver.driveUntilQuiescent(expectedIds);
-
-        expect(attempts).toStrictEqual([
-            [operationId(operations[0])],
-            [operationId(operations[1])],
-            [operationId(operations[0])],
-            [operationId(operations[1])],
-        ]);
     });
 
     it('retries accepted operations after the sync store is replaced', async () => {
@@ -635,26 +591,23 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const push = driver.transport.peekNext();
-        if (!push || push.direction !== 'a-to-b') {
-            throw new Error('expected a pending A-to-B ops_push');
-        }
-        expect(driver.transport.dropNext()).toBe(true);
-
-        driver.transport.connectionA.write(push.raw);
         expect(await driver.transport.deliverNext()).toBe(true);
         expect(await driver.storeB.count()).toBe(0);
+        await driver.driveUntilQuiescent({
+            a: { gatekeeper: expectedIds, store: expectedIds },
+            b: { gatekeeper: expectedIds, store: [] },
+        });
 
         driver.nodeB.run(() => driver!.nodeB.mediator.__test.setSyncStore(driver!.storeB));
-        driver.transport.connectionA.write(push.raw);
-        expect(await driver.transport.deliverNext()).toBe(true);
+        await driver.reconnect();
+        await driver.startSync();
+        await driver.driveUntilQuiescent(expectedIds);
 
         expect(upsertMany).toHaveBeenCalledTimes(2);
         expect(await driver.storeB.count()).toBe(1);
-        await driver.driveUntilQuiescent(expectedIds);
     });
 
-    it('skips database and Gatekeeper work for a persisted duplicate push', async () => {
+    it('rejects a duplicate operation page without repeating database or Gatekeeper work', async () => {
         const operations = await createIndependentOperations(2);
         const expectedIds = operationIds(operations);
         driver = await createMediatorDriver({
@@ -666,32 +619,26 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
 
         await driver.startSync();
         await pumpUntilPendingMessage(driver.transport, 'a-to-b', 'ops_push');
-        const originalPush = decodeWire(driver.transport).at(-1)!.body;
-        expect(driver.transport.dropNext()).toBe(true);
+        const push = driver.transport.peekNext();
+        if (!push || push.direction !== 'a-to-b') {
+            throw new Error('expected a pending A-to-B ops_push');
+        }
 
         const getByIds = jest.mocked(driver.storeB.getByIds);
         const getByIdsCallsBeforeFirstPush = getByIds.mock.calls.length;
-        writeOperationPush(driver.transport, originalPush, operations[0]);
         expect(await driver.transport.deliverNext()).toBe(true);
-        expect(getByIds).toHaveBeenCalledTimes(getByIdsCallsBeforeFirstPush + 1);
+        expect(getByIds.mock.calls.length).toBeGreaterThan(getByIdsCallsBeforeFirstPush);
         const getByIdsCalls = getByIds.mock.calls.length;
         const importBatchCalls = driver.nodeB.gatekeeperClient.importBatch.mock.calls.length;
         const processEventsCalls = driver.nodeB.gatekeeperClient.processEvents.mock.calls.length;
-        expect(await driver.storeB.count()).toBe(1);
-        expect(decodeWire(driver.transport).some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'complete'
-        ))).toBe(false);
+        expect(await driver.storeB.count()).toBe(2);
 
-        writeOperationPush(driver.transport, originalPush, operations[0]);
+        driver.transport.connectionA.write(push.raw);
         expect(await driver.transport.deliverNext()).toBe(true);
 
         expect(getByIds).toHaveBeenCalledTimes(getByIdsCalls);
         expect(driver.nodeB.gatekeeperClient.importBatch).toHaveBeenCalledTimes(importBatchCalls);
         expect(driver.nodeB.gatekeeperClient.processEvents).toHaveBeenCalledTimes(processEventsCalls);
-        expect(await driver.storeB.count()).toBe(1);
-
-        writeOperationPush(driver.transport, originalPush, operations[1]);
-        expect(await driver.transport.deliverNext()).toBe(true);
         await driver.driveUntilQuiescent(expectedIds);
     });
 
@@ -865,7 +812,7 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
             message.direction === 'b-to-a' && message.sequence > finalCatchupSequence
         ))).toBe(true);
         expect(handoffMessages.some(message => (
-            message.body.type === 'neg_close' && message.body.reason === 'ordered_catchup_active'
+            message.body.type === 'neg_close' && message.body.outcome === 'busy'
         ))).toBe(false);
         assertCompletedNegentropyExchange(handoffMessages);
         expect(await gatekeeperIds(driver.nodeA.gatekeeper)).toStrictEqual(expectedIds);
@@ -1047,13 +994,11 @@ describe('hyperswarm mediator Gatekeeper acceptance and ordered handoff', () => 
                 .filter(message => message.body.type === 'ops_req')
                 .flatMap(message => message.body.ids ?? [])).toStrictEqual([]);
             expect(secondMessages
-                .filter(message => ['ops_push', 'ordered_catchup_push', 'batch', 'queue'].includes(message.body.type))
-                .flatMap(message => message.body.data ?? [])).toStrictEqual([]);
+                .filter(message => ['ops_push', 'ordered_catchup_push', 'queue'].includes(message.body.type))
+                .flatMap(message => message.body.operations ?? [])).toStrictEqual([]);
 
-            const canonicalA = (await driver.storeA.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-                .map(row => ({ ts: row.ts, id: row.id }));
-            const canonicalB = (await driver.storeB.iterateSorted({ limit: Number.MAX_SAFE_INTEGER }))
-                .map(row => ({ ts: row.ts, id: row.id }));
+            const canonicalA = await driver.storeA.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
+            const canonicalB = await driver.storeB.iterateSortedKeys({ limit: Number.MAX_SAFE_INTEGER });
             expect(canonicalA).toStrictEqual(canonicalB);
             await assertSourceOrderMirrored();
         }

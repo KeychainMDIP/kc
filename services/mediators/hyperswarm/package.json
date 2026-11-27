@@ -3,7 +3,6 @@
   "version": "2.2.0",
   "type": "module",
   "description": "MDIP hyperswarm network mediator",
-  "main": "src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/negentropy && cp src/negentropy/Negentropy.cjs dist/negentropy/Negentropy.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -12,11 +11,8 @@
   "author": "David McFadzean <davidmc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@noble/hashes": "^2.0.1",
     "async": "^3.2.6",
     "b4a": "^1.8.0",
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
     "hyperswarm": "^4.17.0",
     "pg": "^8.19.0",
     "sqlite": "^5.1.1",

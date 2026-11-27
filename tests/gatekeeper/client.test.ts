@@ -832,6 +832,27 @@ describe('getQueue', () => {
         expect(queue).toStrictEqual([]);
     });
 
+    it('requests a smaller queue head page', async () => {
+        nock(GatekeeperURL)
+            .get(`${Endpoints.queue}/${mockRegistry}`)
+            .query({ limit: 2, maxBytes: 1024 })
+            .reply(200, []);
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.getQueue(mockRegistry, { limit: 2, maxBytes: 1024 }))
+            .resolves.toStrictEqual([]);
+    });
+
+    it('preserves an oversized-head error response', async () => {
+        nock(GatekeeperURL)
+            .get(`${Endpoints.queue}/${mockRegistry}`)
+            .reply(409, { error: 'queue_operation_exceeds_page_limit' });
+
+        const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
+        await expect(gatekeeper.getQueue(mockRegistry))
+            .rejects.toStrictEqual({ error: 'queue_operation_exceeds_page_limit' });
+    });
+
     it('should throw exception on getQueue server error', async () => {
         const mockRegistry = 'local';
 

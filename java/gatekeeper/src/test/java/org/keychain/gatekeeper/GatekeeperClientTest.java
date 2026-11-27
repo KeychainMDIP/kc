@@ -472,6 +472,16 @@ class GatekeeperClientTest {
     }
 
     @Test
+    void queueReadSupportsSmallerPageLimits() throws Exception {
+        server.enqueue(new MockResponse().setBody("[]"));
+
+        assertTrue(client.getQueue("hyperswarm", 10, 1024).isEmpty());
+
+        RecordedRequest request = takeRequest();
+        assertEquals("/api/v1/queue/hyperswarm?limit=10&maxBytes=1024", request.getPath());
+    }
+
+    @Test
     void registryPostPathsEncodeEachSegment() throws Exception {
         server.enqueue(new MockResponse().setBody("true"));
         server.enqueue(new MockResponse().setBody("true"));

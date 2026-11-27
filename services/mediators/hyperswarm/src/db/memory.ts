@@ -7,6 +7,8 @@ import {
     SyncStoreListOptions,
     SyncStoreOrderedListOptions,
     SyncStorePage,
+    SyncStateEntry,
+    SyncStateListOptions,
     SyncStoreWriteResult,
 } from './types.js';
 
@@ -68,7 +70,6 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
                 id: record.id,
                 syncOrder,
                 signedTs,
-                ts: signedTs,
                 operation: record.operation,
                 insertedAt,
             });
@@ -101,6 +102,19 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
         return this.syncState.get(key) ?? null;
     }
 
+    async loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]> {
+        if (!Number.isSafeInteger(options.limit) || options.limit < 1) {
+            throw new Error('Sync state page limit must be a positive safe integer');
+        }
+
+        return Array.from(this.syncState.entries())
+            .filter(([key]) => key.startsWith(prefix)
+                && (options.after === undefined || key > options.after))
+            .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+            .slice(0, options.limit)
+            .map(([key, value]) => ({ key, value }));
+    }
+
     async saveSyncState(key: string, value: string | null): Promise<void> {
         if (value === null) {
             this.syncState.delete(key);
@@ -125,37 +139,9 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
         return out;
     }
 
-    async iterateSorted(options: SyncStoreListOptions = {}): Promise<SyncOperationRecord[]> {
-        const limit = options.limit ?? 1000;
-        const after = options.after;
-        const fromTs = options.fromTs;
-        const toTs = options.toTs;
-
-        const sorted = Array.from(this.records.values()).sort((a, b) => {
-            if (a.ts !== b.ts) {
-                return a.ts - b.ts;
-            }
-            return a.id.localeCompare(b.id);
-        });
-
-        const filtered = sorted.filter(item => {
-            if (after && !(item.ts > after.ts || (item.ts === after.ts && item.id > after.id))) {
-                return false;
-            }
-
-            if (typeof fromTs === 'number' && item.ts < fromTs) {
-                return false;
-            }
-
-            return !(typeof toTs === 'number' && item.ts > toTs);
-        });
-
-        return filtered.slice(0, limit);
-    }
-
     async iterateSortedKeys(options: SyncStoreListOptions = {}): Promise<SyncStoreCursor[]> {
         const limit = options.limit ?? 1000;
-        const rows = Array.from(this.records.values(), ({ id, ts }) => ({ id, ts }))
+        const rows = Array.from(this.records.values(), ({ id, signedTs }) => ({ id, ts: signedTs }))
             .sort((a, b) => a.ts === b.ts ? a.id.localeCompare(b.id) : a.ts - b.ts)
             .filter(item => {
                 if (options.after
@@ -220,13 +206,11 @@ export default class InMemoryOperationSyncStore implements OperationSyncStore {
     }
 
     private getSignedTs(record: SyncOperationWriteRecord): number {
-        const signedTs = record.signedTs ?? record.ts;
-
-        if (typeof signedTs !== 'number' || !Number.isSafeInteger(signedTs)) {
+        if (!Number.isSafeInteger(record.signedTs)) {
             throw new Error('Sync operation record signedTs must be an integer');
         }
 
-        return signedTs;
+        return record.signedTs;
     }
 
     private getSyncOrder(record: SyncOperationWriteRecord): number | undefined {

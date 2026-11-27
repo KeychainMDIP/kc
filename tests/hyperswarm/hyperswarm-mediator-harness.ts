@@ -47,6 +47,7 @@ export type KuboClientDelegates = MockMethods<KuboClient,
     | 'getAddresses'
     | 'addPeeringPeer'
     | 'getPeeringPeers'
+    | 'removePeeringPeer'
 >;
 
 type HyperswarmJoin = (
@@ -145,7 +146,9 @@ function createGatekeeperClientDelegates(context: MediatorNodeContext): Gatekeep
         exportBatch: jest.fn<GatekeeperClient['exportBatch']>(dids => context.gatekeeper.exportBatch(dids)),
         importBatch: jest.fn<GatekeeperClient['importBatch']>((...args) => context.gatekeeper.importBatch(...args)),
         processEvents: jest.fn<GatekeeperClient['processEvents']>((...args) => context.gatekeeper.processEvents(...args)),
-        getQueue: jest.fn<GatekeeperClient['getQueue']>(registry => context.gatekeeper.getQueue(registry)),
+        getQueue: jest.fn<GatekeeperClient['getQueue']>(
+            (registry, options) => context.gatekeeper.getQueue(registry, options),
+        ),
         clearQueue: jest.fn<GatekeeperClient['clearQueue']>(
             (...args) => context.gatekeeper.clearQueue(...args),
         ),
@@ -168,6 +171,7 @@ function createKuboClientDelegates(): KuboClientDelegates {
         getAddresses: jest.fn<KuboClient['getAddresses']>(async () => []),
         addPeeringPeer: jest.fn<KuboClient['addPeeringPeer']>(async () => undefined),
         getPeeringPeers: jest.fn<KuboClient['getPeeringPeers']>(async () => []),
+        removePeeringPeer: jest.fn<KuboClient['removePeeringPeer']>(async () => undefined),
     };
 }
 
@@ -352,7 +356,6 @@ const BASELINE_ENV = {
     KC_HYPR_DB: 'sqlite',
     KC_IPFS_ENABLE: 'false',
     KC_HYPR_EXPORT_INTERVAL: '2',
-    KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT: '0',
     KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '25000',
     KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '64',
     KC_HYPR_NEGENTROPY_INTERVAL: '300',

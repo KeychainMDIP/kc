@@ -8,6 +8,8 @@ import { createImportPipeline } from '../../services/mediators/hyperswarm/src/im
 import { createQueueCoordinator } from '../../services/mediators/hyperswarm/src/queue-coordinator.ts';
 import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 import { bootstrapSyncStoreFromGatekeeper } from '../../services/mediators/hyperswarm/src/bootstrap.ts';
+import { createBulkWorkScheduler } from '../../services/mediators/hyperswarm/src/bulk-work-scheduler.ts';
+import { createOperationPageBudget } from '../../services/mediators/hyperswarm/src/operation-page-budget.ts';
 import TestHelper from '../gatekeeper/helper.ts';
 
 describe('expiration and historical synchronization', () => {
@@ -35,9 +37,16 @@ describe('expiration and historical synchronization', () => {
         });
         const relay = jest.fn(async () => {});
         const coordinator = createQueueCoordinator({
-            registry: 'hyperswarm', gatekeeper, cipher, syncStats: stats,
+            registry: 'hyperswarm', maxOpsPerPage: 300, maxBytesPerPage: 512 * 1024,
+            repairIntervalMs: 1_000,
+            gatekeeper, cipher, syncStats: stats,
+            bulkReads: createBulkWorkScheduler(2),
+            operationPages: createOperationPageBudget(5, 5 * 512 * 1024),
             getImportPipeline: () => pipeline, getNodeKey: () => 'local',
-            createQueueMessage: () => ({ type: 'queue', time: '', node: '', relays: [] }), relay,
+            getConnection: () => undefined,
+            requestRepair: async () => false,
+            relay,
+            onProtocolViolation: jest.fn(),
         });
         try {
             await pipeline.refreshIndex('startup');
@@ -53,14 +62,14 @@ describe('expiration and historical synchronization', () => {
             await expect(coordinator.flush()).resolves.toBeUndefined();
             expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
             expect(await store.has(asset.signature!.hash)).toBe(true);
-            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [asset] }));
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ operations: [asset] }));
 
             const subsequent = await helper.createAgentOp(cipher.generateRandomJwk(), { registry: 'hyperswarm' });
             await gatekeeper.createDID(subsequent);
             await expect(coordinator.flush()).resolves.toBeUndefined();
             expect(await gatekeeper.getQueue('hyperswarm')).toEqual([]);
             expect(relay).toHaveBeenCalledTimes(3);
-            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ data: [subsequent] }));
+            expect(relay).toHaveBeenLastCalledWith(expect.objectContaining({ operations: [subsequent] }));
         } finally {
             await pipeline.shutdown();
         }

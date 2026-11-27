@@ -4,8 +4,6 @@ export interface SyncOperationRecord {
     id: string;
     syncOrder?: number;
     signedTs: number;
-    // Compatibility alias for the current negentropy cursor/window code.
-    ts: number;
     operation: Operation;
     insertedAt: number;
 }
@@ -13,8 +11,7 @@ export interface SyncOperationRecord {
 export interface SyncOperationWriteRecord {
     id: string;
     syncOrder?: number;
-    signedTs?: number;
-    ts?: number;
+    signedTs: number;
     operation: Operation;
     insertedAt?: number;
 }
@@ -47,6 +44,16 @@ export interface SyncStorePage {
     syncStateUpdates?: Record<string, string | null>;
 }
 
+export interface SyncStateEntry {
+    key: string;
+    value: string;
+}
+
+export interface SyncStateListOptions {
+    after?: string;
+    limit: number;
+}
+
 export interface SyncStoreWriteResult {
     inserted: number;
     updated: number;
@@ -69,10 +76,10 @@ export interface OperationSyncStore {
     upsertMany(records: SyncOperationWriteRecord[]): Promise<SyncStoreWriteResult>;
     applySyncPage(page: SyncStorePage): Promise<ApplySyncStorePageResult>;
     loadSyncState(key: string): Promise<string | null>;
+    loadSyncStateByPrefix(prefix: string, options: SyncStateListOptions): Promise<SyncStateEntry[]>;
     saveSyncState(key: string, value: string | null): Promise<void>;
     getByIds(ids: string[]): Promise<SyncOperationRecord[]>;
     iterateSortedKeys(options?: SyncStoreListOptions): Promise<SyncStoreCursor[]>;
-    iterateSorted(options?: SyncStoreListOptions): Promise<SyncOperationRecord[]>;
     iterateOrdered(options?: SyncStoreOrderedListOptions): Promise<SyncOperationRecord[]>;
     has(id: string): Promise<boolean>;
     count(): Promise<number>;

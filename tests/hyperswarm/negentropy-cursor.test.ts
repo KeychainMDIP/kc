@@ -28,7 +28,7 @@ describe('compareSyncCursor', () => {
         expect(compareSyncCursor(cursor, cursor)).toBe(0);
     });
 
-    it('advances to the remote cursor when a capped overlap was already known locally', () => {
+    it('keeps the earlier capped cursor when received pushes were already known locally', () => {
         const decision = getContinuationCursorDecision({
             windowName: 'history_paged',
             windowAfter: null,
@@ -38,12 +38,11 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 2,
             receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
         });
 
         expect(decision.blockedByAfter).toBe(false);
-        expect(decision.chosenCursor).toStrictEqual({ ts: 11, id: '0'.repeat(64) });
+        expect(decision.chosenCursor).toStrictEqual({ ts: 10, id: 'a'.repeat(64) });
     });
 
     it('keeps the conservative earlier cursor when received pushes were not already known', () => {
@@ -56,7 +55,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
         });
 
@@ -74,7 +72,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 10, id: 'a'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: { ts: 11, id: 'b'.repeat(64) },
         });
 
@@ -92,7 +89,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: { ts: 11, id: '0'.repeat(64) },
         });
 
@@ -110,7 +106,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 12, id: 'f'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 2,
             receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
         });
 
@@ -118,7 +113,7 @@ describe('compareSyncCursor', () => {
         expect(decision.chosenCursor).toStrictEqual({ ts: 12, id: 'f'.repeat(64) });
     });
 
-    it('keeps the local later cursor for known-overlap pages when it sorts after the remote cursor', () => {
+    it('uses the earlier remote cursor when the local capped cursor sorts later', () => {
         const decision = getContinuationCursorDecision({
             windowName: 'history_paged',
             windowAfter: null,
@@ -128,12 +123,11 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: true,
             remoteLastCursor: { ts: 11, id: '0'.repeat(64) },
             receivedPushCount: 2,
-            receivedKnownPushCount: 2,
             receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
         });
 
         expect(decision.blockedByAfter).toBe(false);
-        expect(decision.chosenCursor).toStrictEqual({ ts: 12, id: 'f'.repeat(64) });
+        expect(decision.chosenCursor).toStrictEqual({ ts: 11, id: '0'.repeat(64) });
     });
 
     it('falls back to the received push max cursor for full history pages', () => {
@@ -146,7 +140,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: false,
             remoteLastCursor: null,
             receivedPushCount: 2,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: { ts: 12, id: 'f'.repeat(64) },
         });
 
@@ -164,7 +157,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: false,
             remoteLastCursor: null,
             receivedPushCount: 2,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: null,
         });
 
@@ -182,7 +174,6 @@ describe('compareSyncCursor', () => {
             remoteCappedByRecords: false,
             remoteLastCursor: null,
             receivedPushCount: 0,
-            receivedKnownPushCount: 0,
             receivedPushMaxCursor: null,
         });
 
