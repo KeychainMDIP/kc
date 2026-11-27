@@ -28,7 +28,7 @@ describe('bulk work scheduler', () => {
     );
 
     it('runs at most two jobs and starts queued jobs in FIFO order', async () => {
-        const scheduler = createBulkWorkScheduler(2);
+        const scheduler = createBulkWorkScheduler();
         const first = deferred<string>();
         const second = deferred<string>();
         const third = deferred<string>();
@@ -56,7 +56,7 @@ describe('bulk work scheduler', () => {
     });
 
     it('admits one active and one pending job per key', async () => {
-        const scheduler = createBulkWorkScheduler(1);
+        const scheduler = createBulkWorkScheduler(2);
         const blocked = deferred<void>();
         const running = scheduler.run('peer', () => blocked.promise);
         const pending = scheduler.run('peer', async () => 'next');
