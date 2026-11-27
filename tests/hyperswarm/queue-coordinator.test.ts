@@ -763,7 +763,7 @@ describe('queue coordinator', () => {
         await coordinator.handleMessage('peer-key', message, connection);
         expect(enqueue).toHaveBeenCalledTimes(1);
         expect(relay).toHaveBeenCalledTimes(1);
-        expect(operationPages.pages).toBe(0);
+        expect(operationPages.getMetrics().pages).toBe(0);
     });
 
     it('admits at most one active and one waiting gossip batch', async () => {
@@ -889,7 +889,7 @@ describe('queue coordinator', () => {
         expect(requestRepair).not.toHaveBeenCalled();
         expect(onProtocolViolation).not.toHaveBeenCalled();
         expect(hashJSON).toHaveBeenCalledTimes(hashesBeforeDrops);
-        expect(operationPages.pages).toBe(2);
+        expect(operationPages.getMetrics().pages).toBe(2);
         expect(syncStats.hardening.gossipOverloadDrops).toBe(3);
         expect(coordinator.getMetrics()).toMatchObject({ recentOutcomes: 0, repairsPending: 1 });
 
@@ -1557,7 +1557,7 @@ describe('queue coordinator', () => {
         await expect(shutdown).resolves.toBeUndefined();
         await expect(coordinator.shutdown()).resolves.toBeUndefined();
         await expect(coordinator.runRepairs()).resolves.toBeUndefined();
-        expect(operationPages.pages).toBe(0);
+        expect(operationPages.getMetrics().pages).toBe(0);
     });
 
     it('rejects an invalid recent-outcome limit', () => {

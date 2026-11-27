@@ -29,7 +29,6 @@ import type {
     NegCloseOutcome,
     PingMessage,
 } from './protocol-messages.js';
-import type { MediatorSyncStats } from './sync-stats.js';
 
 const log = childLogger({ service: 'hyperswarm-mediator' });
 
@@ -40,7 +39,6 @@ type SyncSource = 'connect' | 'periodic';
 interface PeerSyncCoordinatorOptions {
     windowSize: number;
     repairIntervalMs: number;
-    syncStats: MediatorSyncStats;
     getNodeKey(): string;
     getPeerKeys(): string[];
     getConnection(peerKey: string): ConnectionInfo | undefined;

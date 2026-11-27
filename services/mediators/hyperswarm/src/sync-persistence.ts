@@ -387,36 +387,3 @@ export async function filterKnownOperations(
         invalid,
     };
 }
-
-export function sortOperationsBySyncKey(operations: Operation[]): Operation[] {
-    if (!Array.isArray(operations) || operations.length <= 1) {
-        return Array.isArray(operations) ? [...operations] : [];
-    }
-
-    return operations
-        .map((operation, index) => ({
-            operation,
-            index,
-            mapped: mapOperationToSyncKey(operation),
-        }))
-        .sort((a, b) => {
-            if (a.mapped.ok && b.mapped.ok) {
-                if (a.mapped.value.ts !== b.mapped.value.ts) {
-                    return a.mapped.value.ts - b.mapped.value.ts;
-                }
-
-                if (a.mapped.value.idHex < b.mapped.value.idHex) {
-                    return -1;
-                }
-
-                if (a.mapped.value.idHex > b.mapped.value.idHex) {
-                    return 1;
-                }
-            } else if (a.mapped.ok !== b.mapped.ok) {
-                return a.mapped.ok ? -1 : 1;
-            }
-
-            return a.index - b.index;
-        })
-        .map(item => item.operation);
-}

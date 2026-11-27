@@ -8,7 +8,6 @@ import { createNegentropyCoordinator } from '../../services/mediators/hyperswarm
 import { normalizePeerCapabilities } from '../../services/mediators/hyperswarm/src/negentropy/protocol.ts';
 import { createOrderedCatchupCoordinator } from '../../services/mediators/hyperswarm/src/ordered-catchup-coordinator.ts';
 import { createPeerSyncCoordinator } from '../../services/mediators/hyperswarm/src/peer-sync-coordinator.ts';
-import { createMediatorSyncStats } from '../../services/mediators/hyperswarm/src/sync-stats.ts';
 
 describe('peer sync coordinator targeted repair', () => {
     function createHarness() {
@@ -38,11 +37,9 @@ describe('peer sync coordinator targeted repair', () => {
         } as unknown as ReturnType<typeof createOrderedCatchupCoordinator>;
         const waitForInitialPing = jest.fn(async () => true);
         let current: ConnectionInfo | undefined = connection;
-        const syncStats = createMediatorSyncStats();
         const coordinator = createPeerSyncCoordinator({
             windowSize: 25_000,
             repairIntervalMs: 1_000,
-            syncStats,
             getNodeKey: () => 'f'.repeat(64),
             getPeerKeys: () => current ? [peerKey] : [],
             getConnection: () => current,
@@ -67,7 +64,6 @@ describe('peer sync coordinator targeted repair', () => {
                 current = value;
             },
             startSession,
-            syncStats,
             waitForInitialPing,
         };
     }

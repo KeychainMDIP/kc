@@ -181,7 +181,6 @@ negentropyCoordinator = buildNegentropyCoordinator(syncStore, importPipeline);
 peerSyncCoordinator = createPeerSyncCoordinator({
     windowSize: config.negentropyMaxRecordsPerWindow,
     repairIntervalMs: NEG_REPAIR_INTERVAL_MS,
-    syncStats,
     getNodeKey: () => nodeKey,
     getPeerKeys: () => transport.getPeerKeys(),
     getConnection: peerKey => transport.getConnection(peerKey),

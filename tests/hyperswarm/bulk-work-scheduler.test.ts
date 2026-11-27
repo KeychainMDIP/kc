@@ -52,7 +52,7 @@ describe('bulk work scheduler', () => {
         second.resolve('two');
         third.resolve('three');
         await expect(Promise.all([secondResult, thirdResult])).resolves.toStrictEqual(['two', 'three']);
-        await expect(scheduler.waitForIdle()).resolves.toBeUndefined();
+        await expect(scheduler.shutdown()).resolves.toBeUndefined();
     });
 
     it('admits one active and one pending job per key', async () => {
@@ -83,28 +83,16 @@ describe('bulk work scheduler', () => {
         await expect(running).resolves.toBe('complete');
     });
 
-    it('cancels every pending job while retaining active jobs', async () => {
+    it('rejects pending and new work during shutdown, then waits for active work', async () => {
         const scheduler = createBulkWorkScheduler(1);
         const active = deferred<void>();
         const running = scheduler.run('active', () => active.promise);
         const pendingA = scheduler.run('pending-a', async () => undefined);
         const pendingB = scheduler.run('pending-b', async () => undefined);
-
-        scheduler.cancelPending();
-        await expect(pendingA).rejects.toBeInstanceOf(BulkWorkCancelledError);
-        await expect(pendingB).rejects.toBeInstanceOf(BulkWorkCancelledError);
-        active.resolve();
-        await running;
-    });
-
-    it('rejects pending and new work during shutdown, then waits for active work', async () => {
-        const scheduler = createBulkWorkScheduler(1);
-        const active = deferred<void>();
-        const running = scheduler.run('active', () => active.promise);
-        const pending = scheduler.run('pending', async () => undefined);
         const shutdown = scheduler.shutdown();
 
-        await expect(pending).rejects.toBeInstanceOf(BulkWorkCancelledError);
+        await expect(pendingA).rejects.toBeInstanceOf(BulkWorkCancelledError);
+        await expect(pendingB).rejects.toBeInstanceOf(BulkWorkCancelledError);
         await expect(scheduler.run('new', async () => undefined)).rejects.toThrow(
             'bulk work scheduler is shutting down',
         );

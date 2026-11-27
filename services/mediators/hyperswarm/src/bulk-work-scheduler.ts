@@ -15,8 +15,6 @@ export class BulkWorkCancelledError extends Error {
 export interface BulkWorkScheduler {
     run<T>(key: string, work: () => Promise<T>): Promise<T>;
     cancel(key: string): void;
-    cancelPending(): void;
-    waitForIdle(): Promise<void>;
     shutdown(): Promise<void>;
 }
 
@@ -108,10 +106,6 @@ export function createBulkWorkScheduler(concurrency = 2): BulkWorkScheduler {
         cancel(key: string): void {
             rejectPending(work => work.key === key);
         },
-        cancelPending(): void {
-            rejectPending(() => true);
-        },
-        waitForIdle,
         shutdown(): Promise<void> {
             if (!shutdownPromise) {
                 accepting = false;

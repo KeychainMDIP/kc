@@ -15,23 +15,19 @@ describe('operation page budget', () => {
         const first = budget.reserve(4)!;
         const second = budget.reserve(6)!;
 
-        expect(budget.pages).toBe(2);
-        expect(budget.bytes).toBe(10);
+        expect(budget.getMetrics()).toMatchObject({ pages: 2, bytes: 10 });
         expect(budget.reserve(0)).toBeNull();
 
         first.release();
         first.release();
-        expect(budget.pages).toBe(1);
-        expect(budget.bytes).toBe(6);
+        expect(budget.getMetrics()).toMatchObject({ pages: 1, bytes: 6 });
 
         const replacement = budget.reserve(4)!;
-        expect(budget.pages).toBe(2);
-        expect(budget.bytes).toBe(10);
+        expect(budget.getMetrics()).toMatchObject({ pages: 2, bytes: 10 });
 
         second.release();
         replacement.release();
-        expect(budget.pages).toBe(0);
-        expect(budget.bytes).toBe(0);
+        expect(budget.getMetrics()).toMatchObject({ pages: 0, bytes: 0 });
     });
 
     it('rejects invalid reservations and new work after shutdown', () => {

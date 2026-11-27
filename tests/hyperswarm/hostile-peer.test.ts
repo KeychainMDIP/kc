@@ -227,8 +227,8 @@ describe('hostile peer integration', () => {
             }
             expect(h.queue.getMetrics()).toEqual({ admitted: 2, inFlight: 2, recentOutcomes: 0, repairsPending: 1 });
             expect(h.pipeline.queued + h.pipeline.running).toBe(2);
-            expect(h.pages.pages).toBe(2);
-            expect(h.pages.bytes).toBeLessThanOrEqual(5 * 512 * 1024);
+            expect(h.pages.getMetrics().pages).toBe(2);
+            expect(h.pages.getMetrics().bytes).toBeLessThanOrEqual(5 * 512 * 1024);
             expect(h.transport.getAccounting().inboundBytes).toBeLessThanOrEqual(1024 * 1024 + 2 * (512 * 1024 + 65540) + 4);
             expect(h.stats.protocolViolationCooldowns).toBe(0);
             expect(h.stats.hardening.gossipRepairsScheduled).toBe(1);
@@ -249,7 +249,7 @@ describe('hostile peer integration', () => {
             await Promise.all([first, second]);
             expect(await h.store.count()).toBe(2);
             expect(h.queue.getMetrics().admitted).toBe(0);
-            expect(h.pages.bytes).toBe(0);
+            expect(h.pages.getMetrics().bytes).toBe(0);
             expect(h.stats.hardening.gossipOverloadDrops).toBe(4_200);
             h.repair.mockResolvedValueOnce(true);
             await h.queue.runRepairs();
@@ -311,7 +311,7 @@ describe('hostile peer integration', () => {
             expect(peer.destroyed).toBe(true);
             expect(await h.store.count()).toBe(0);
             expect(h.stats.hardening.unauthorizedNegentropyMessages).toBe(1);
-            expect(h.pages.bytes).toBe(0);
+            expect(h.pages.getMetrics().bytes).toBe(0);
         }
         finally { await h.close(); }
     });

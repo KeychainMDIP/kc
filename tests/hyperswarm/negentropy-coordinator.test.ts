@@ -1305,12 +1305,11 @@ describe('Negentropy coordinator', () => {
     it('repairs skipped gossip through another peer after recovery even when this node normally responds', async () => {
         const [
             { createPeerSyncCoordinator }, { createConnectionInfo },
-            { normalizePeerCapabilities }, { createMediatorSyncStats },
+            { normalizePeerCapabilities },
         ] = await Promise.all([
             import('../../services/mediators/hyperswarm/src/peer-sync-coordinator.ts'),
             import('../../services/mediators/hyperswarm/src/mediator-state.ts'),
             import('../../services/mediators/hyperswarm/src/negentropy/protocol.ts'),
-            import('../../services/mediators/hyperswarm/src/sync-stats.ts'),
         ]);
         const peers = ['11'.repeat(32), '22'.repeat(32)];
         const connections = new Map(peers.map(peerKey => {
@@ -1330,7 +1329,7 @@ describe('Negentropy coordinator', () => {
         const startSession = jest.fn(async (peerKey: string) => { activePeer = peerKey; return true; });
         const reset = jest.fn(() => { activePeer = null; });
         const coordinator = createPeerSyncCoordinator({
-            windowSize: 25_000, repairIntervalMs: 300_000, syncStats: createMediatorSyncStats(),
+            windowSize: 25_000, repairIntervalMs: 300_000,
             getNodeKey: () => 'ff'.repeat(32), getPeerKeys: () => [...connections.keys()],
             getConnection: key => connections.get(key),
             getImportPipeline: () => ({ available: true, queued: 0, running: 0 } as ImportPipeline),

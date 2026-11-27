@@ -1,11 +1,8 @@
 export interface OperationPageReservation {
-    readonly bytes: number;
     release(): void;
 }
 
 export interface OperationPageBudget {
-    readonly pages: number;
-    readonly bytes: number;
     reserve(bytes: number): OperationPageReservation | null;
     getMetrics(): { pages: number; bytes: number; admissionFailures: number };
     shutdown(): void;
@@ -28,12 +25,6 @@ export function createOperationPageBudget(
     let admissionFailures = 0;
 
     return {
-        get pages(): number {
-            return pages;
-        },
-        get bytes(): number {
-            return bytes;
-        },
         reserve(requestedBytes: number): OperationPageReservation | null {
             if (!Number.isSafeInteger(requestedBytes) || requestedBytes < 0) {
                 throw new Error('operation page bytes must be a non-negative safe integer');
@@ -47,7 +38,6 @@ export function createOperationPageBudget(
             bytes += requestedBytes;
             let released = false;
             return {
-                bytes: requestedBytes,
                 release(): void {
                     if (released) {
                         return;
